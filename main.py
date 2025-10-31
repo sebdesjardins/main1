@@ -38,4 +38,47 @@ def handle_message(msg):
     Gestion brute des messages venant de l'Arduino UNO R4
     car la lib WebSocketClient envoie tout via "message" (pas d'événements nommés).
     """
-    print(f"📨 Message reçu : {msg}"
+    print(f"📨 Message reçu : {msg}")
+    try:
+        import json
+        data = json.loads(msg)
+        event = data.get("event")
+        payload = data.get("data", {})
+
+        if event == "register":
+            mac = payload.get("mac")
+            if mac:
+                arduino_clients[mac] = request.sid
+                print(f"✅ Arduino enregistré : {mac}")
+                emit("message", '{"event":"registered","data":{"status":"ok"}}')
+        elif event == "pin_status":
+            print(f"📩 Statut broche reçu : {payload}")
+        else:
+            print("⚠️ Événement inconnu :", event)
+    except Exception as e:
+        print(f"❌ Erreur de parsing JSON : {e}")
+
+@app.route("/toggle_d2", methods=["POST"])
+def toggle_d2():
+    """
+    Exemple de commande HTTP -> envoie une commande WebSocket à l’Arduino.
+    JSON attendu : {"mac": "xx:xx:xx:xx:xx:xx"}
+    """
+    data = request.get_json()
+    mac = data.get("mac")
+
+    if mac not in arduino_clients:
+        return jsonify({"error": "Arduino non connecté"}), 404
+
+    sid = arduino_clients[mac]
+    cmd = {"event": "toggle_pin", "data": {"pin": "D2", "state": "HIGH"}}
+
+    import json
+    socketio.emit("message", json.dumps(cmd), to=sid)
+    print(f"📡 Commande toggle_pin envoyée à {mac}")
+    return jsonify({"status": "sent", "mac": mac}), 200
+
+if __name__ == "__main__":
+    import os
+    port = int(os.environ.get("PORT", 10000))
+    socketio.run(app, host="0.0.0.0", port=port)
