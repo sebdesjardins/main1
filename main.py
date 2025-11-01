@@ -3,6 +3,7 @@ from flask_socketio import SocketIO, emit
 import json
 import os
 
+
 app = Flask(__name__)
 # Autoriser CORS pour tester depuis n'importe où
 socketio = SocketIO(app, cors_allowed_origins="*")
