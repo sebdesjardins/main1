@@ -4,81 +4,73 @@ from flask_socketio import SocketIO, emit
 app = Flask(__name__)
 socketio = SocketIO(app, cors_allowed_origins="*")
 
-# Dictionnaire global pour stocker les Arduinos connectés
-arduino_clients = {}
+# Dictionnaire pour stocker les clients connectés
+# key = MAC Arduino, value = socket id
+clients = {}
 
-@app.route("/")
-def home():
-    """Page d'accueil simple pour vérifier l'état du serveur"""
-    return jsonify({
-        "status": "online",
-        "connected_clients": list(arduino_clients.keys())
-    })
+@app.route('/')
+def index():
+    return "Serveur Arduino WebSocket actif"
 
-@socketio.on("connect")
-def on_connect():
-    print("🔌 Nouveau client WebSocket connecté")
+# Route pour envoyer une commande pin à un Arduino
+@app.route('/set_pin')
+def set_pin():
+    mac = request.args.get("mac")  # MAC obligatoire pour cibler un Arduino
+    pin = request.args.get("pin")
+    value_str = request.args.get("value", "HIGH").upper()
 
-@socketio.on("disconnect")
-def on_disconnect():
-    # Retire l'Arduino s’il se déconnecte
-    disconnected = None
-    for mac, sid in list(arduino_clients.items()):
-        if arduino_clients[mac] == request.sid:
-            disconnected = mac
-            del arduino_clients[mac]
-    if disconnected:
-        print(f"❌ Arduino {disconnected} déconnecté")
-    else:
-        print("Un client inconnu s’est déconnecté")
+    if mac not in clients:
+        return jsonify({"status": "error", "message": f"MAC {mac} non trouvé"}), 404
 
-@socketio.on("message")
-def handle_message(msg):
-    """
-    Gestion brute des messages venant de l'Arduino UNO R4
-    car la lib WebSocketClient envoie tout via "message" (pas d'événements nommés).
-    """
-    print(f"📨 Message reçu : {msg}")
-    try:
-        import json
-        data = json.loads(msg)
-        event = data.get("event")
-        payload = data.get("data", {})
+    if not pin:
+        return jsonify({"status": "error", "message": "Paramètre 'pin' manquant"}), 400
 
-        if event == "register":
-            mac = payload.get("mac")
-            if mac:
-                arduino_clients[mac] = request.sid
-                print(f"✅ Arduino enregistré : {mac}")
-                emit("message", '{"event":"registered","data":{"status":"ok"}}')
-        elif event == "pin_status":
-            print(f"📩 Statut broche reçu : {payload}")
-        else:
-            print("⚠️ Événement inconnu :", event)
-    except Exception as e:
-        print(f"❌ Erreur de parsing JSON : {e}")
+    # Convertir value en 1/0
+    value = 1 if value_str in ["HIGH", "1", "ON"] else 0
 
-@app.route("/toggle_d2", methods=["POST"])
-def toggle_d2():
-    """
-    Exemple de commande HTTP -> envoie une commande WebSocket à l’Arduino.
-    JSON attendu : {"mac": "xx:xx:xx:xx:xx:xx"}
-    """
-    data = request.get_json()
-    mac = data.get("mac")
+    data = {"pin": pin, "value": value}
+    sid = clients[mac]
+    socketio.emit("message", data, to=sid)
 
-    if mac not in arduino_clients:
-        return jsonify({"error": "Arduino non connecté"}), 404
+    return jsonify({"status": "ok", "pin": pin, "value": value, "mac": mac})
 
-    sid = arduino_clients[mac]
-    cmd = {"event": "toggle_pin", "data": {"pin": "D2", "state": "HIGH"}}
+# Route pour lister toutes les MAC Arduino enregistrées
+@app.route('/get_mc_address')
+def get_mc_address():
+    mac_list = list(clients.keys())
+    return jsonify({"connected_mac": mac_list})
 
+# WebSocket : connexion
+@socketio.on('connect')
+def handle_connect():
+    print(f"✅ Client connecté, sid={request.sid}")
+
+# WebSocket : réception messages de l'Arduino
+@socketio.on('message')
+def handle_message(data):
+    print(f"Message reçu : {data}")
     import json
-    socketio.emit("message", json.dumps(cmd), to=sid)
-    print(f"📡 Commande toggle_pin envoyée à {mac}")
-    return jsonify({"status": "sent", "mac": mac}), 200
+    try:
+        d = json.loads(data)
+        if "mac" in d:
+            mac = d["mac"]
+            clients[mac] = request.sid
+            print(f"Arduino enregistré avec MAC : {mac}")
+            emit("message", "Connecté et enregistré sur le serveur !", to=request.sid)
+    except Exception as e:
+        print("Erreur JSON :", e)
+
+# WebSocket : déconnexion
+@socketio.on('disconnect')
+def handle_disconnect():
+    # Supprimer le client de la liste
+    remove_mac = [mac for mac, sid in clients.items() if sid == request.sid]
+    for mac in remove_mac:
+        print(f"Arduino déconnecté : {mac}")
+        del clients[mac]
 
 if __name__ == "__main__":
+    # Pour Render, le port est généralement défini via env variable PORT
     import os
-    port = int(os.environ.get("PORT", 10000))
-    socketio.run(app, host="0.0.0.0", port=port)
+    port = int(os.environ.get("PORT", 5000))
+    socketio.run(app, host="0.0.0.0", port=port, allow_unsafe_werkzeug=True)
