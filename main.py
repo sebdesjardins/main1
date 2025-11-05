@@ -45,6 +45,19 @@ async def get_connected():
         result[name] = {"connected": True, "last_seen_seconds_ago": delta}
     return JSONResponse(result)
 
+commands = {}  # stocke les ordres en attente
+
+@app.get("/set_command")
+async def set_command(arduino: str, cmd: str):
+    """Définit une commande à exécuter par l'Arduino"""
+    commands[arduino] = cmd
+    return {"status": "ok", "message": f"Commande '{cmd}' envoyée à {arduino}"}
+
+@app.get("/get_command")
+async def get_command(arduino: str):
+    """Consultée par l'Arduino : renvoie la commande en attente"""
+    cmd = commands.pop(arduino, None)
+    return {"command": cmd or ""}
 
 @app.get("/arduino_reboot")
 async def reboot_arduino(arduino: str):
