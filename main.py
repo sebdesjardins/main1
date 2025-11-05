@@ -18,6 +18,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
 @app.get("/get_socket_bidirectionnel")
 async def get_socket(request: Request):
     """
