@@ -1,80 +1,95 @@
-from fastapi import FastAPI, Request, Response
-from fastapi.responses import JSONResponse
-from fastapi.middleware.cors import CORSMiddleware
-import asyncio
+# server.py
+from flask import Flask, request, jsonify, render_template_string
+from datetime import datetime, timedelta
+import threading
 
-app = FastAPI()
+app = Flask(__name__)
 
-# Dictionnaires pour suivre les Arduinos et les ordres
-arduinos_connected = {}   # {arduino_name: {"ip": str, "status": str}}
-pending_commands = {}     # {arduino_name: "REBOOT"}
+# Clé secrète partagée avec l'Arduino
+SECURITY_KEY = "CLE1234"
 
-# Autoriser l’accès depuis ton navigateur (utile si tu appelles depuis un front)
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# Base des arduinos
+arduinos = {}  # { name: { 'last_seen': datetime, 'action': str, 'connected': bool } }
 
+# Nettoyage automatique des arduinos inactifs
+def cleanup_task():
+    while True:
+        now = datetime.utcnow()
+        for name, info in list(arduinos.items()):
+            if (now - info["last_seen"]).total_seconds() > 10:
+                arduinos[name]["connected"] = False
+        import time
+        time.sleep(5)
 
-@app.get("/get_socket_bidirectionnel")
-async def get_socket(request: Request):
+threading.Thread(target=cleanup_task, daemon=True).start()
+
+@app.route("/arduino", methods=["POST"])
+def arduino_connect():
+    data = request.get_json()
+    if not data or data.get("key") != SECURITY_KEY:
+        return jsonify({"status": "error", "message": "Invalid key"}), 403
+
+    name = data.get("name", "unknown")
+    now = datetime.utcnow()
+
+    # Mettre à jour ou ajouter l'arduino
+    if name not in arduinos:
+        arduinos[name] = {"last_seen": now, "action": "", "connected": True}
+    else:
+        arduinos[name]["last_seen"] = now
+        arduinos[name]["connected"] = True
+
+    # Action à retourner à l'arduino
+    action = arduinos[name]["action"]
+
+    # Une fois envoyée, on efface l'action
+    arduinos[name]["action"] = ""
+
+    return jsonify({
+        "status": "ok",
+        "message": f"Bonjour {name}, connexion HTTPS réussie.",
+        "action": action
+    })
+
+@app.route("/home")
+def home():
+    now = datetime.utcnow()
+    html = """
+    <html>
+    <head><title>Arduino Monitor</title></head>
+    <body>
+        <h2>Liste des Arduinos connectés</h2>
+        <table border="1" cellpadding="5">
+            <tr><th>Nom</th><th>Dernière connexion</th><th>Statut</th><th>Action</th><th>Envoyer Action</th></tr>
+            {% for name, info in arduinos.items() %}
+            <tr>
+                <td>{{ name }}</td>
+                <td>{{ info.last_seen.strftime('%H:%M:%S') }}</td>
+                <td>{{ "✅ Connecté" if info.connected else "❌ Hors ligne" }}</td>
+                <td>{{ info.action or "(aucune)" }}</td>
+                <td>
+                    <form method="POST" action="/set_action/{{ name }}">
+                        <select name="action">
+                            <option value="">Aucune</option>
+                            <option value="conexion_https_ok()">conexion_https_ok()</option>
+                        </select>
+                        <input type="submit" value="Envoyer">
+                    </form>
+                </td>
+            </tr>
+            {% endfor %}
+        </table>
+    </body>
+    </html>
     """
-    Appelé par l’Arduino :
-      - soit pour s’enregistrer
-      - soit pour envoyer un "ping"
-      - soit pour recevoir un ordre
-    """
-    arduino_name = request.headers.get("X-Arduino-Name", "Unknown")
-    client_ip = request.client.host
+    return render_template_string(html, arduinos=arduinos)
 
-    # Enregistre ou met à jour l'état de l'Arduino
-    arduinos_connected[arduino_name] = {"ip": client_ip, "status": "connected"}
+@app.route("/set_action/<name>", methods=["POST"])
+def set_action(name):
+    action = request.form.get("action", "")
+    if name in arduinos:
+        arduinos[name]["action"] = action
+    return ("<meta http-equiv='refresh' content='0; url=/home'>")
 
-    print(f"📡 Requête reçue de {arduino_name} ({client_ip})")
-
-    # Si une commande est en attente, on la renvoie et on la supprime
-    if arduino_name in pending_commands:
-        cmd = pending_commands.pop(arduino_name)
-        print(f"➡️ Envoi de la commande '{cmd}' à {arduino_name}")
-        return Response(content=cmd, media_type="text/plain")
-
-    # Sinon, renvoie un simple message pour maintenir la connexion
-    return Response(content="OK", media_type="text/plain")
-
-
-@app.get("/get_arduino_connected")
-async def get_connected():
-    """Renvoie la liste des Arduinos connectés"""
-    return JSONResponse(arduinos_connected)
-
-
-@app.get("/arduino_reboot")
-async def reboot_arduino(arduino: str):
-    """
-    Quand tu appelles :
-      https://main1-n5uh.onrender.com/arduino_reboot?arduino=ArduinoSalon
-    → le serveur stocke un ordre REBOOT pour cet Arduino
-    """
-    if arduino not in arduinos_connected:
-        return JSONResponse({"status": "error", "message": "Arduino non connecté"})
-
-    pending_commands[arduino] = "REBOOT"
-    print(f"♻️ Reboot demandé pour {arduino}")
-    return JSONResponse({"status": "ok", "message": f"Commande REBOOT envoyée à {arduino}"})
-
-
-@app.get("/")
-async def index():
-    """Page d'accueil simple"""
-    return {"status": "ok", "message": "Serveur Arduino en ligne"}
-
-
-# Pour exécuter localement : python main.py
 if __name__ == "__main__":
-    import uvicorn
-    import os
-    port = int(os.getenv("PORT", 8000))
-    uvicorn.run(app, host="0.0.0.0", port=port)
+    app.run(host="0.0.0.0", port=10000)
