@@ -36,7 +36,7 @@ def arduino_connect():
 
     return jsonify({
         "status": "ok",
-        "message": f"Bonjour {name}, connexion HTTPS réussie.",
+        "message": f"{name}, connexion OK.",
         "action": action
     })
 
