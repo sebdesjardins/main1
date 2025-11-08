@@ -1,14 +1,14 @@
 from flask import Flask, request, jsonify, render_template_string, redirect, url_for, session
-from datetime import datetime, timedelta
+from datetime import datetime
 
 app = Flask(__name__)
-app.secret_key = "SUPER_SECRET_KEY_CHANGE_ME"  # 🔑 Change cette clé en production
+app.secret_key = "SUPER_SECRET_KEY_CHANGE_ME"  # 🔑 Change cette clé
 
 # -----------------------------
-# CONFIGURATION
+# CONFIG
 # -----------------------------
 SECURITY_KEY = "CLE1234"
-ADMIN_PASSWORD = "admin123"  # 🔐 mot de passe pour /home
+ADMIN_PASSWORD = "admin123"
 arduinos = {}  # { name: { 'last_seen': datetime, 'action': str, 'connected': bool } }
 
 # -----------------------------
@@ -23,16 +23,16 @@ def arduino_connect():
     name = data.get("name", "unknown")
     now = datetime.utcnow()
 
-    # Met à jour l'état de l'Arduino
+    # Met à jour ou ajoute l’Arduino
     arduinos[name] = {
         "last_seen": now,
         "connected": True,
         "action": arduinos.get(name, {}).get("action", "")
     }
 
-    # Envoie l’action éventuelle
+    # Récupère et vide l’action en attente
     action = arduinos[name]["action"]
-    arduinos[name]["action"] = ""  # efface après envoi
+    arduinos[name]["action"] = ""
 
     return jsonify({
         "status": "ok",
@@ -80,27 +80,17 @@ LOGIN_HTML = """
 """
 
 # -----------------------------
-# PAGE D'ACCUEIL /HOME
+# PAGE PRINCIPALE /HOME
 # -----------------------------
 @app.route("/home")
 def home():
     if not session.get("logged_in"):
         return redirect(url_for("login"))
 
-    now = datetime.utcnow()
-
-    # Vérifie l'état des Arduinos
-    for name, info in arduinos.items():
-        if (now - info["last_seen"]).total_seconds() > 10:
-            info["connected"] = False
-        else:
-            info["connected"] = True
-
     html = """
     <html>
     <head>
-        <title>Arduino Monitor</title>
-        <meta http-equiv="refresh" content="3">
+        <title>Arduino Monitor (AJAX + Anim)</title>
         <style>
             body { font-family: Arial, sans-serif; background-color: #f7f7f7; margin: 20px; }
             table { border-collapse: collapse; width: 80%; background: white; box-shadow: 0 0 10px rgba(0,0,0,0.1); }
@@ -109,40 +99,84 @@ def home():
             tr:nth-child(even) { background-color: #f2f2f2; }
             .ok { color: green; font-weight: bold; }
             .off { color: red; font-weight: bold; }
+            .fade-green { animation: flashGreen 0.8s ease; }
+            .fade-red { animation: flashRed 0.8s ease; }
+            @keyframes flashGreen {
+                from { background-color: #c6f6c6; }
+                to { background-color: white; }
+            }
+            @keyframes flashRed {
+                from { background-color: #f8c6c6; }
+                to { background-color: white; }
+            }
             .logout { margin-top: 15px; }
         </style>
+        <script>
+            let previousStatus = {};
+
+            async function refreshData() {
+                try {
+                    const response = await fetch('/status');
+                    const data = await response.json();
+                    const tableBody = document.getElementById('arduino-table-body');
+                    tableBody.innerHTML = '';
+
+                    for (const [name, info] of Object.entries(data.arduinos)) {
+                        const wasConnected = previousStatus[name];
+                        const row = document.createElement('tr');
+
+                        // Ajoute effet visuel selon changement d’état
+                        if (wasConnected !== undefined && wasConnected !== info.connected) {
+                            if (info.connected) row.classList.add('fade-green');
+                            else row.classList.add('fade-red');
+                        }
+
+                        row.innerHTML = `
+                            <td>${name}</td>
+                            <td>${info.last_seen}</td>
+                            <td class="${info.connected ? 'ok' : 'off'}">
+                                ${info.connected ? '✅ Connecté' : '❌ Hors ligne'}
+                            </td>
+                            <td>${info.action || '(aucune)'}</td>
+                            <td>
+                                <form method="POST" action="/set_action/${name}">
+                                    <select name="action">
+                                        <option value="">Aucune</option>
+                                        <option value="conexion_https_ok()">conexion_https_ok()</option>
+                                    </select>
+                                    <input type="submit" value="Envoyer">
+                                </form>
+                            </td>`;
+                        tableBody.appendChild(row);
+
+                        previousStatus[name] = info.connected;
+                    }
+
+                    document.getElementById('last-update').textContent = new Date().toLocaleTimeString();
+                } catch (err) {
+                    console.error("Erreur AJAX:", err);
+                }
+            }
+
+            setInterval(refreshData, 3000);
+            window.onload = refreshData;
+        </script>
     </head>
     <body>
         <h2>🛰️ Tableau de bord des Arduinos</h2>
-        <p>Dernière actualisation : {{ now.strftime('%H:%M:%S') }} (auto-refresh 3s)</p>
+        <p>Dernière actualisation : <span id="last-update">--:--:--</span></p>
 
         <table>
-            <tr>
-                <th>Nom</th>
-                <th>Dernière connexion</th>
-                <th>Statut</th>
-                <th>Action actuelle</th>
-                <th>Envoyer Action</th>
-            </tr>
-            {% for name, info in arduinos.items() %}
-            <tr>
-                <td>{{ name }}</td>
-                <td>{{ info.last_seen.strftime('%H:%M:%S') }}</td>
-                <td class="{{ 'ok' if info.connected else 'off' }}">
-                    {{ "✅ Connecté" if info.connected else "❌ Hors ligne" }}
-                </td>
-                <td>{{ info.action or "(aucune)" }}</td>
-                <td>
-                    <form method="POST" action="/set_action/{{ name }}">
-                        <select name="action">
-                            <option value="">Aucune</option>
-                            <option value="conexion_https_ok()">conexion_https_ok()</option>
-                        </select>
-                        <input type="submit" value="Envoyer">
-                    </form>
-                </td>
-            </tr>
-            {% endfor %}
+            <thead>
+                <tr>
+                    <th>Nom</th>
+                    <th>Dernière connexion</th>
+                    <th>Statut</th>
+                    <th>Action actuelle</th>
+                    <th>Envoyer Action</th>
+                </tr>
+            </thead>
+            <tbody id="arduino-table-body"></tbody>
         </table>
 
         <div class="logout">
@@ -153,10 +187,34 @@ def home():
     </body>
     </html>
     """
-    return render_template_string(html, arduinos=arduinos, now=now)
+    return render_template_string(html)
 
 # -----------------------------
-# ROUTE POUR DÉCONNEXION
+# ROUTE AJAX /STATUS
+# -----------------------------
+@app.route("/status")
+def status():
+    if not session.get("logged_in"):
+        return jsonify({"error": "unauthorized"}), 403
+
+    now = datetime.utcnow()
+    for name, info in arduinos.items():
+        info["connected"] = (now - info["last_seen"]).total_seconds() <= 10
+
+    data = {
+        "arduinos": {
+            name: {
+                "last_seen": info["last_seen"].strftime("%H:%M:%S"),
+                "connected": info["connected"],
+                "action": info["action"]
+            }
+            for name, info in arduinos.items()
+        }
+    }
+    return jsonify(data)
+
+# -----------------------------
+# DÉCONNEXION
 # -----------------------------
 @app.route("/logout", methods=["POST"])
 def logout():
@@ -164,7 +222,7 @@ def logout():
     return redirect(url_for("login"))
 
 # -----------------------------
-# ENVOI D’ACTIONS
+# ACTION MANUELLE
 # -----------------------------
 @app.route("/set_action/<name>", methods=["POST"])
 def set_action(name):
@@ -173,4 +231,4 @@ def set_action(name):
     action = request.form.get("action", "")
     if name in arduinos:
         arduinos[name]["action"] = action
-    return ("<meta http-equiv='refresh' content='0; url=/home'>")
+    return redirect(url_for("home"))
