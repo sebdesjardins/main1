@@ -3,5 +3,5 @@ services:
     name: mon-serveur-flask
     env: python
     buildCommand: "pip install -r requirements.txt"
-    startCommand: "gunicorn server:app --bind 0.0.0.0:10000"
+    startCommand: "gunicorn server:app"
     plan: free
