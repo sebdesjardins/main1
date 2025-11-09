@@ -79,6 +79,7 @@ LOGIN_HTML = """
 </html>
 """
 
+
 # -----------------------------
 # PAGE PRINCIPALE /HOME
 # -----------------------------
@@ -93,10 +94,10 @@ def home():
     html = """
     <html>
     <head>
-        <title>Arduino Monitor (manuel refresh)</title>
+        <title>Arduino Monitor - 2 parties</title>
         <style>
             body { font-family: Arial, sans-serif; background-color: #f7f7f7; margin: 20px; }
-            table { border-collapse: collapse; width: 80%; background: white; box-shadow: 0 0 10px rgba(0,0,0,0.1); }
+            table { border-collapse: collapse; width: 80%; background: white; box-shadow: 0 0 10px rgba(0,0,0,0.1); margin-bottom: 30px; }
             th, td { padding: 10px; text-align: center; border: 1px solid #ddd; }
             th { background-color: #0078D7; color: white; }
             tr:nth-child(even) { background-color: #f2f2f2; }
@@ -107,21 +108,17 @@ def home():
             button:hover { background: #005fa3; }
         </style>
         <script>
-            async function refreshData() {
+            // -----------------------------
+            // Partie 1 : Tableau dynamique
+            // -----------------------------
+            async function refreshDynamicTable() {
                 try {
                     const response = await fetch('/status');
                     const data = await response.json();
-                    const tableBody = document.getElementById('arduino-table-body');
+                    const tableBody = document.getElementById('dynamic-table-body');
                     tableBody.innerHTML = '';
 
-                    const actionOptions = {{ actions|tojson }};
-
                     for (const [name, info] of Object.entries(data.arduinos)) {
-                        let optionsHTML = '<option value="">Aucune</option>';
-                        for (const act of actionOptions) {
-                            optionsHTML += `<option value="${act}">${act}</option>`;
-                        }
-
                         const row = document.createElement('tr');
                         row.innerHTML = `
                             <td>${name}</td>
@@ -130,12 +127,7 @@ def home():
                                 ${info.connected ? '✅ Connecté' : '❌ Hors ligne'}
                             </td>
                             <td>${info.action || '(aucune)'}</td>
-                            <td>
-                                <form method="POST" action="/set_action/${name}">
-                                    <select name="action">${optionsHTML}</select>
-                                    <input type="submit" value="Envoyer">
-                                </form>
-                            </td>`;
+                        `;
                         tableBody.appendChild(row);
                     }
 
@@ -145,14 +137,27 @@ def home():
                 }
             }
 
-            window.onload = refreshData;
+            setInterval(refreshDynamicTable, 3000);
+            window.onload = refreshDynamicTable;
         </script>
     </head>
     <body>
-        <h2>🛰️ Tableau de bord des Arduinos</h2>
+        <h2>🛰️ Tableau dynamique des Arduinos (rafraîchi toutes les 3s)</h2>
         <p>Dernière actualisation : <span id="last-update">--:--:--</span></p>
-        <button onclick="refreshData()">🔄 Rafraîchir maintenant</button>
 
+        <table>
+            <thead>
+                <tr>
+                    <th>Nom</th>
+                    <th>Dernière connexion</th>
+                    <th>Statut</th>
+                    <th>Action actuelle</th>
+                </tr>
+            </thead>
+            <tbody id="dynamic-table-body"></tbody>
+        </table>
+
+        <h2>🛠️ Tableau des Arduinos connus (Envoyer action)</h2>
         <table>
             <thead>
                 <tr>
@@ -163,7 +168,27 @@ def home():
                     <th>Envoyer Action</th>
                 </tr>
             </thead>
-            <tbody id="arduino-table-body"></tbody>
+            <tbody>
+                {% for name, info in arduinos.items() %}
+                <tr>
+                    <td>{{ name }}</td>
+                    <td>{{ info.last_seen.strftime('%H:%M:%S') }}</td>
+                    <td>{{ "✅ Connecté" if info.connected else "❌ Hors ligne" }}</td>
+                    <td>{{ info.action or "(aucune)" }}</td>
+                    <td>
+                        <form method="POST" action="/set_action/{{ name }}">
+                            <select name="action">
+                                <option value="">Aucune</option>
+                                {% for act in actions %}
+                                <option value="{{ act }}">{{ act }}</option>
+                                {% endfor %}
+                            </select>
+                            <input type="submit" value="Envoyer">
+                        </form>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
         </table>
 
         <div class="logout">
@@ -174,7 +199,7 @@ def home():
     </body>
     </html>
     """
-    return render_template_string(html, actions=arduinos_actions)
+    return render_template_string(html, actions=arduinos_actions, arduinos=arduinos)
 
 # -----------------------------
 # ROUTE AJAX /STATUS
@@ -199,14 +224,6 @@ def status():
         }
     }
     return jsonify(data)
-
-# -----------------------------
-# DÉCONNEXION
-# -----------------------------
-@app.route("/logout", methods=["POST"])
-def logout():
-    session.pop("logged_in", None)
-    return redirect(url_for("login"))
 
 # -----------------------------
 # ACTION MANUELLE
