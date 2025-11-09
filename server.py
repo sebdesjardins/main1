@@ -205,7 +205,7 @@ def status():
 
     now = datetime.utcnow()
     for name, info in arduinos.items():
-        info["connected"] = (now - info["last_seen"]).total_seconds() <= 10
+        info["connected"] = (now - info["last_seen"]).total_seconds() <= 15
 
     data = {
         "arduinos": {
