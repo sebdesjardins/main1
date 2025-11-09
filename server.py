@@ -82,11 +82,6 @@ LOGIN_HTML = """
 # -----------------------------
 # PAGE PRINCIPALE /HOME
 # -----------------------------
-# Liste des actions possibles que le serveur peut envoyer aux Arduinos
-arduinos_actions = ["reboot", "conexion_https_ok()", "blink_led", "update_firmware"]
-# -----------------------------
-# PAGE PRINCIPALE /HOME
-# -----------------------------
 @app.route("/home")
 def home():
     if not session.get("logged_in"):
@@ -98,7 +93,7 @@ def home():
     html = """
     <html>
     <head>
-        <title>Arduino Monitor (AJAX + Anim)</title>
+        <title>Arduino Monitor (manuel refresh)</title>
         <style>
             body { font-family: Arial, sans-serif; background-color: #f7f7f7; margin: 20px; }
             table { border-collapse: collapse; width: 80%; background: white; box-shadow: 0 0 10px rgba(0,0,0,0.1); }
@@ -107,21 +102,11 @@ def home():
             tr:nth-child(even) { background-color: #f2f2f2; }
             .ok { color: green; font-weight: bold; }
             .off { color: red; font-weight: bold; }
-            .fade-green { animation: flashGreen 0.8s ease; }
-            .fade-red { animation: flashRed 0.8s ease; }
-            @keyframes flashGreen {
-                from { background-color: #c6f6c6; }
-                to { background-color: white; }
-            }
-            @keyframes flashRed {
-                from { background-color: #f8c6c6; }
-                to { background-color: white; }
-            }
             .logout { margin-top: 15px; }
+            button { padding: 8px 16px; margin-top: 10px; cursor: pointer; border: none; background: #0078D7; color: white; border-radius: 5px; }
+            button:hover { background: #005fa3; }
         </style>
         <script>
-            let previousStatus = {};
-
             async function refreshData() {
                 try {
                     const response = await fetch('/status');
@@ -129,24 +114,15 @@ def home():
                     const tableBody = document.getElementById('arduino-table-body');
                     tableBody.innerHTML = '';
 
+                    const actionOptions = {{ actions|tojson }};
+
                     for (const [name, info] of Object.entries(data.arduinos)) {
-                        const wasConnected = previousStatus[name];
-                        const row = document.createElement('tr');
-
-                        // Animation selon changement d’état
-                        if (wasConnected !== undefined && wasConnected !== info.connected) {
-                            if (info.connected) row.classList.add('fade-green');
-                            else row.classList.add('fade-red');
-                        }
-
-                        // Liste déroulante d’actions
-                        const actionOptions = {{ actions|tojson }};
-
                         let optionsHTML = '<option value="">Aucune</option>';
                         for (const act of actionOptions) {
                             optionsHTML += `<option value="${act}">${act}</option>`;
                         }
 
+                        const row = document.createElement('tr');
                         row.innerHTML = `
                             <td>${name}</td>
                             <td>${info.last_seen}</td>
@@ -161,8 +137,6 @@ def home():
                                 </form>
                             </td>`;
                         tableBody.appendChild(row);
-
-                        previousStatus[name] = info.connected;
                     }
 
                     document.getElementById('last-update').textContent = new Date().toLocaleTimeString();
@@ -171,13 +145,13 @@ def home():
                 }
             }
 
-            setInterval(refreshData, 3000);
             window.onload = refreshData;
         </script>
     </head>
     <body>
         <h2>🛰️ Tableau de bord des Arduinos</h2>
         <p>Dernière actualisation : <span id="last-update">--:--:--</span></p>
+        <button onclick="refreshData()">🔄 Rafraîchir maintenant</button>
 
         <table>
             <thead>
