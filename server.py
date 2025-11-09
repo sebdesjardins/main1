@@ -157,7 +157,7 @@ def home():
             <tbody id="dynamic-table-body"></tbody>
         </table>
 
-        <h2>🛠️ Tableau des Arduinos connus (Envoyer action)</h2>
+        <h2>🛠️ Envoie des actions</h2>
         <table>
             <thead>
                 <tr>
