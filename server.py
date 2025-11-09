@@ -82,10 +82,18 @@ LOGIN_HTML = """
 # -----------------------------
 # PAGE PRINCIPALE /HOME
 # -----------------------------
+# Liste des actions possibles que le serveur peut envoyer aux Arduinos
+arduinos_actions = ["reboot", "conexion_https_ok()", "blink_led", "update_firmware"]
+# -----------------------------
+# PAGE PRINCIPALE /HOME
+# -----------------------------
 @app.route("/home")
 def home():
     if not session.get("logged_in"):
         return redirect(url_for("login"))
+
+    # Tableau des actions possibles
+    arduinos_actions = ["reboot", "conexion_https_ok()"]
 
     html = """
     <html>
@@ -125,10 +133,18 @@ def home():
                         const wasConnected = previousStatus[name];
                         const row = document.createElement('tr');
 
-                        // Ajoute effet visuel selon changement d’état
+                        // Animation selon changement d’état
                         if (wasConnected !== undefined && wasConnected !== info.connected) {
                             if (info.connected) row.classList.add('fade-green');
                             else row.classList.add('fade-red');
+                        }
+
+                        // Liste déroulante d’actions
+                        const actionOptions = {{ actions|tojson }};
+
+                        let optionsHTML = '<option value="">Aucune</option>';
+                        for (const act of actionOptions) {
+                            optionsHTML += `<option value="${act}">${act}</option>`;
                         }
 
                         row.innerHTML = `
@@ -140,10 +156,7 @@ def home():
                             <td>${info.action || '(aucune)'}</td>
                             <td>
                                 <form method="POST" action="/set_action/${name}">
-                                    <select name="action">
-                                        <option value="">Aucune</option>
-                                        <option value="conexion_https_ok()">conexion_https_ok()</option>
-                                    </select>
+                                    <select name="action">${optionsHTML}</select>
                                     <input type="submit" value="Envoyer">
                                 </form>
                             </td>`;
@@ -187,7 +200,7 @@ def home():
     </body>
     </html>
     """
-    return render_template_string(html)
+    return render_template_string(html, actions=arduinos_actions)
 
 # -----------------------------
 # ROUTE AJAX /STATUS
