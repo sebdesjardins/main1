@@ -89,12 +89,12 @@ def home():
         return redirect(url_for("login"))
 
     # Tableau des actions possibles
-    arduinos_actions = ["reboot", "conexion_https_ok()"]
+    arduinos_actions = ["reboot", "bonjour"]
 
     html = """
     <html>
     <head>
-        <title>Arduino Monitor - 2 parties</title>
+        <title>Arduino Monitor</title>
         <style>
             body { font-family: Arial, sans-serif; background-color: #f7f7f7; margin: 20px; }
             table { border-collapse: collapse; width: 80%; background: white; box-shadow: 0 0 10px rgba(0,0,0,0.1); margin-bottom: 30px; }
@@ -142,7 +142,7 @@ def home():
         </script>
     </head>
     <body>
-        <h2>🛰️ Tableau dynamique des Arduinos (rafraîchi toutes les 3s)</h2>
+        <h2>🛰️ Tableau dynamique des Arduinos </h2>
         <p>Dernière actualisation : <span id="last-update">--:--:--</span></p>
 
         <table>
@@ -162,9 +162,6 @@ def home():
             <thead>
                 <tr>
                     <th>Nom</th>
-                    <th>Dernière connexion</th>
-                    <th>Statut</th>
-                    <th>Action actuelle</th>
                     <th>Envoyer Action</th>
                 </tr>
             </thead>
@@ -172,9 +169,6 @@ def home():
                 {% for name, info in arduinos.items() %}
                 <tr>
                     <td>{{ name }}</td>
-                    <td>{{ info.last_seen.strftime('%H:%M:%S') }}</td>
-                    <td>{{ "✅ Connecté" if info.connected else "❌ Hors ligne" }}</td>
-                    <td>{{ info.action or "(aucune)" }}</td>
                     <td>
                         <form method="POST" action="/set_action/{{ name }}">
                             <select name="action">
