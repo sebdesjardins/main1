@@ -190,7 +190,6 @@ def home():
     <body>
         <h2>🛰️ Tableau dynamique des Arduinos </h2>
         <p>Dernière actualisation : <span id="last-update">--:--:--</span></p>
-
         <table>
             <thead>
                 <tr>
@@ -203,7 +202,29 @@ def home():
             <tbody id="dynamic-table-body"></tbody>
         </table>
 
-        <h2>🛠️ Envoie des actions</h2>
+        <h2>📋 Informations Arduino (statique)</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>Nom</th>
+                    <th>Info Arduino</th>
+                    <th>Pin Config</th>
+                    <th>Pin Values</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for name, info in arduinos_config.items() %}
+                <tr>
+                    <td>{{ name }}</td>
+                    <td>{{ info.config_str }}</td>
+                    <td>{{ info.pin_config | join(';') }}</td>
+                    <td>{{ info.pin_value | join(';') }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+
+        <h2>🛠️ Envoi des actions</h2>
         <table>
             <thead>
                 <tr>
@@ -239,7 +260,7 @@ def home():
     </body>
     </html>
     """
-    return render_template_string(html, actions=arduinos_actions, arduinos=arduinos)
+    return render_template_string(html, actions=arduinos_actions, arduinos=arduinos, arduinos_config=arduinos_config)
 
 # -----------------------------
 # ROUTE AJAX /STATUS
