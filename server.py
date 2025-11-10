@@ -274,7 +274,7 @@ def home():
         
         <h2>📋 Informations détaillées des Arduinos connus</h2>
 
-        {% for name, info in arduinos_config.items() %}
+        <div id="config-table-container"></div>
         {% set fields = info.config_str.split(';') %}
         {% set ippub = fields[5].split(',') %}
         <h3>🔧 Informations de {{ name }}</h3>
