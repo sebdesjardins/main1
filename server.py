@@ -212,7 +212,7 @@ def home():
                                     <tr><td>Adresse IP locale</td><td>${fields[2] || ''}</td></tr>
                                     <tr><td>Mc Address</td><td>${fields[3] || ''}</td></tr>
                                     <tr><td>URL du serveur</td><td>https://${fields[4] || ''}</td></tr>
-                                    <tr><td>Adresse IP publique</td><td>${ippub[1] || fields[5] || ''}</td></tr>
+                                    <tr><td>Adresse IP publique</td><td>${ippub[0] || fields[5] || ''}</td></tr>
                                 </tbody>
                             </table>
                         `;
