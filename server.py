@@ -163,7 +163,6 @@ def home():
                     const data = await response.json();
                     const tableBody = document.getElementById('dynamic-table-body');
                     tableBody.innerHTML = '';
-
                     for (const [name, info] of Object.entries(data.arduinos)) {
                         const row = document.createElement('tr');
                         row.innerHTML = `
@@ -176,19 +175,17 @@ def home():
                         `;
                         tableBody.appendChild(row);
                     }
-
                     document.getElementById('last-update').textContent = new Date().toLocaleTimeString();
                 } catch (err) {
                     console.error("Erreur AJAX:", err);
                 }
             }
-
             setInterval(refreshDynamicTable, 3000);
             window.onload = refreshDynamicTable;
         </script>
     </head>
     <body>
-        <h2>🛰️ Tableau dynamique des Arduinos </h2>
+        <h2>🛰️ Arduinos connus </h2>
         <p>Dernière actualisation : <span id="last-update">--:--:--</span></p>
         <table>
             <thead>
@@ -202,29 +199,7 @@ def home():
             <tbody id="dynamic-table-body"></tbody>
         </table>
 
-        <h2>📋 Informations Arduino (statique)</h2>
-        <table>
-            <thead>
-                <tr>
-                    <th>Nom</th>
-                    <th>Info Arduino</th>
-                    <th>Pin Config</th>
-                    <th>Pin Values</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for name, info in arduinos_config.items() %}
-                <tr>
-                    <td>{{ name }}</td>
-                    <td>{{ info.config_str }}</td>
-                    <td>{{ info.pin_config | join(';') }}</td>
-                    <td>{{ info.pin_value | join(';') }}</td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
-
-        <h2>🛠️ Envoi des actions</h2>
+        <h2>🛠️ Envoi des actions vers les Arduinos</h2>
         <table>
             <thead>
                 <tr>
@@ -247,6 +222,24 @@ def home():
                             <input type="submit" value="Envoyer">
                         </form>
                     </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        
+        <h2>📋Informations des Arduino connus</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>Nom</th>
+                    <th>Info des Arduino connus</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for name, info in arduinos_config.items() %}
+                <tr>
+                    <td>{{ name }}</td>
+                    <td>{{ info.config_str }}</td>
                 </tr>
                 {% endfor %}
             </tbody>
