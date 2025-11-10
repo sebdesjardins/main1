@@ -274,27 +274,7 @@ def home():
         
         <h2>📋 Informations détaillées des Arduinos connus</h2>
 
-        {% for name, info in arduinos_config.items() %}
-        {% set fields = info.config_str.split(';') %}
-        {% set ippub = fields[5].split(',') %}
-        <h3>🔧 Informations de {{ name }}</h3>
-        <table>
-            <thead>
-                <tr>
-                    <th>Nom du champ</th>
-                    <th>Valeur</th>
-                </tr>
-            </thead>
-            <tbody>
-                <tr><td>Nom de l'Arduino</td><td>{{ fields[0] if fields|length > 0 else '' }}</td></tr>
-                <tr><td>Type</td><td>{{ fields[1] if fields|length > 1 else '' }}</td></tr>
-                <tr><td>Adresse IP local</td><td>{{ fields[2] if fields|length > 2 else '' }}</td></tr>
-                <tr><td>Mc Address</td><td>{{ fields[3] if fields|length > 3 else '' }}</td></tr>
-                <tr><td>URL du serveur</td><td>https://{{ fields[4] if fields|length > 4 else '' }}</td></tr>
-                <tr><td>Adresse IP publique</td><td>{{ ippub[2] if ippub|length > 2 else '' }}</td></tr>
-            </tbody>
-        </table>
-        {% endfor %}
+        <div id="config-table-container"></div>
 
         <div class="logout">
             <form action="/logout" method="POST">
