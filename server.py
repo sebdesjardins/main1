@@ -130,9 +130,7 @@ def set_arduino_info():
 def home():
     if not session.get("logged_in"):
         return redirect(url_for("login"))
-
     arduinos_actions = ["reboot", "bonjour"]
-
     html = """
     <html>
     <head>
@@ -175,7 +173,6 @@ def home():
                     console.error("Erreur AJAX:", err);
                 }
             }
-
             setInterval(refreshDynamicTable, 3000);
             window.onload = refreshDynamicTable;
         </script>
@@ -194,7 +191,6 @@ def home():
             </thead>
             <tbody id="dynamic-table-body"></tbody>
         </table>
-
         <h2>📋 Variables des Arduinos</h2>
         {% for name, info in arduinos_config.items() %}
         <h3>Variables de l'Arduino {{ name }}</h3>
@@ -214,7 +210,6 @@ def home():
             </tbody>
         </table>
         {% endfor %}
-
         <h2>🛠️ Envoi des actions</h2>
         <table>
             <thead>
@@ -242,7 +237,6 @@ def home():
                 {% endfor %}
             </tbody>
         </table>
-
         <div class="logout">
             <form action="/logout" method="POST">
                 <input type="submit" value="🚪 Se déconnecter">
