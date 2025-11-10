@@ -134,6 +134,68 @@ def set_arduino_info():
         return jsonify({"status": "error", "message": str(e)}), 500
 
 
+@app.route("/set_arduino_config", methods=["POST"])
+def set_arduino_config():
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({"status": "error", "message": "Pas de données reçues"}), 400
+
+        # Vérification de la clé de sécurité
+        if data.get("key") != SECURITY_KEY:
+            return jsonify({"status": "error", "message": "Clé invalide"}), 403
+
+        name = data.get("name")
+        if not name:
+            return jsonify({"status": "error", "message": "Nom Arduino manquant"}), 400
+
+        # Récupération de l'adresse IP publique du client
+        client_ip = request.headers.get('X-Forwarded-For', request.remote_addr)
+
+        # Récupération de la chaîne contenant les deux tableaux concaténés
+        config_str = data.get("arduino_config", "")  # ex: "10,0;20,0;15,1024;..."
+
+        # Initialisation des tableaux
+        pin_config = []
+        pin_analog_value = []
+
+        if config_str:
+            broches = config_str.split(";")
+            for b in broches:
+                vals = b.split(",")
+                if len(vals) == 2:
+                    pin_config.append(int(vals[0]))
+                    pin_analog_value.append(int(vals[1]))
+                else:
+                    pin_config.append(0)
+                    pin_analog_value.append(0)
+        else:
+            pin_config = [0]*19
+            pin_analog_value = [0]*19
+
+        # Ajout de l'adresse IP à la fin de config_str
+        if config_str:
+            config_str += ";" + client_ip
+        else:
+            config_str = client_ip
+
+        # Mise à jour du dictionnaire global
+        arduinos_config[name] = {
+            "name": name,
+            "config_str": config_str,
+            "pin_config": pin_config,
+            "pin_value": pin_analog_value,
+            "last_seen": datetime.utcnow()
+        }
+
+        print(f"Arduino {name} pin_config mis à jour : {arduinos_config[name]}")
+
+        return jsonify({"status": "ok", "message": f"{name} configuration reçue et mise à jour."})
+
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
 # -----------------------------
 # PAGE PRINCIPALE /HOME
 # -----------------------------
