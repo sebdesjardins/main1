@@ -98,6 +98,9 @@ def set_arduino_info():
         if not name:
             return jsonify({"status": "error", "message": "Nom Arduino manquant"}), 400
 
+        # Récupération de l'adresse IP publique du client
+        client_ip = request.headers.get('X-Forwarded-For', request.remote_addr)
+
         # Récupération des champs
         config_str = data.get("arduino_infos", "")  # ex : "ARDUINO_EB20;R4 Wifi;..."
 
@@ -108,6 +111,11 @@ def set_arduino_info():
         # Conversion des strings en listes d'entiers
         pin_config = [int(x) for x in pin_config_str.split(";")] if pin_config_str else [0]*19
         pin_value = [int(x) for x in pin_value_str.split(";")] if pin_value_str else [0]*19
+        # Ajout de l'adresse IP à la fin de config_str
+        if config_str:
+            config_str += ";" + client_ip
+        else:
+            config_str = client_ip
 
         # Mise à jour du dictionnaire global
         arduinos_config[name] = {
@@ -243,9 +251,10 @@ def home():
             <tbody>
                 <tr><td>Nom de l'Arduino</td><td>{{ fields[0] if fields|length > 0 else '' }}</td></tr>
                 <tr><td>Type</td><td>{{ fields[1] if fields|length > 1 else '' }}</td></tr>
-                <tr><td>Adresse IP</td><td>{{ fields[2] if fields|length > 2 else '' }}</td></tr>
+                <tr><td>Adresse IP local</td><td>{{ fields[2] if fields|length > 2 else '' }}</td></tr>
                 <tr><td>Mc Address</td><td>{{ fields[3] if fields|length > 3 else '' }}</td></tr>
                 <tr><td>URL du serveur</td><td>https://{{ fields[4] if fields|length > 4 else '' }}</td></tr>
+                <tr><td>Adresse IP publique</td><td>https://{{ fields[5] if fields|length > 5 else '' }}</td></tr>
             </tbody>
         </table>
         {% endfor %}
