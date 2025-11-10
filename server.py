@@ -240,6 +240,7 @@ def home():
 
         {% for name, info in arduinos_config.items() %}
         {% set fields = info.config_str.split(';') %}
+        {% set ippub = fields[5].split(',') %}
         <h3>🔧 Informations de {{ name }}</h3>
         <table>
             <thead>
@@ -254,7 +255,7 @@ def home():
                 <tr><td>Adresse IP local</td><td>{{ fields[2] if fields|length > 2 else '' }}</td></tr>
                 <tr><td>Mc Address</td><td>{{ fields[3] if fields|length > 3 else '' }}</td></tr>
                 <tr><td>URL du serveur</td><td>https://{{ fields[4] if fields|length > 4 else '' }}</td></tr>
-                <tr><td>Adresse IP publique</td><td>https://{{ fields[5] if fields|length > 5 else '' }}</td></tr>
+                <tr><td>Adresse IP publique</td><td>{{ ippub[2] if ippub|length > 2 else '' }}</td></tr>
             </tbody>
         </table>
         {% endfor %}
