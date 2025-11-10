@@ -10,6 +10,10 @@ app.secret_key = "SUPER_SECRET_KEY_CHANGE_ME"  # 🔑 Change cette clé
 SECURITY_KEY = "CLE1234"
 ADMIN_PASSWORD = "admin123"
 arduinos = {}  # { name: { 'last_seen': datetime, 'action': str, 'connected': bool } }
+# Dictionnaire global pour stocker toutes les configs Arduino
+arduinos_config = {}  # { "ARDUINO_EB20": { "name":..., "config_str":..., "pin_config": [...], "pin_value": [...] } }
+
+
 
 # -----------------------------
 # ROUTE POUR LES ARDUINOS
@@ -78,6 +82,42 @@ LOGIN_HTML = """
 </body>
 </html>
 """
+
+# -----------------------------
+# ROUTE POUR RECEVOIR LES CONFIGURATIONS DES ARDUINOS
+# -----------------------------
+@app.route("/set_arduino_info", methods=["POST"])
+def set_arduino_info():
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({"status": "error", "message": "Pas de données reçues"}), 400
+        # Vérification de la clé de sécurité
+        if data.get("key") != SECURITY_KEY:
+            return jsonify({"status": "error", "message": "Clé invalide"}), 403
+        name = data.get("name")
+        if not name:
+            return jsonify({"status": "error", "message": "Nom Arduino manquant"}), 400
+        # Récupération des champs
+        config_str = data.get("arduino_infos", "")  # La string envoyée par l'arduino (ex : "ARDUINO_EB20;R4 Wifi;...")
+        # On peut également récupérer pin_config et pin_value si Arduino envoie séparément
+        pin_config_str = data.get("pin_config", "")
+        pin_value_str = data.get("pin_value", "")
+        # Conversion des strings en listes d'entiers
+        pin_config = [int(x) for x in pin_config_str.split(";")] if pin_config_str else [0]*19
+        pin_value = [int(x) for x in pin_value_str.split(";")] if pin_value_str else [0]*19
+        # Mise à jour du dictionnaire global
+        arduinos_config[name] = {
+            "name": name,
+            "config_str": config_str,
+            "pin_config": pin_config,
+            "pin_value": pin_value,
+            "last_seen": datetime.datetime.utcnow()
+        }
+        print(f"Arduino {name} mis à jour : {arduinos_config[name]}")
+        return jsonify({"status": "ok", "message": f"{name} configuration reçue et mise à jour."})
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
 
 
 # -----------------------------
