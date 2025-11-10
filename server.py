@@ -126,11 +126,17 @@ def set_arduino_info():
         return jsonify({"status": "error", "message": str(e)}), 500
 
 
+# -----------------------------
+# PAGE PRINCIPALE /HOME
+# -----------------------------
 @app.route("/home")
 def home():
     if not session.get("logged_in"):
         return redirect(url_for("login"))
+
+    # Tableau des actions possibles
     arduinos_actions = ["reboot", "bonjour"]
+
     html = """
     <html>
     <head>
@@ -148,6 +154,9 @@ def home():
             button:hover { background: #005fa3; }
         </style>
         <script>
+            // -----------------------------
+            // Partie 1 : Tableau dynamique
+            // -----------------------------
             async function refreshDynamicTable() {
                 try {
                     const response = await fetch('/status');
@@ -173,6 +182,7 @@ def home():
                     console.error("Erreur AJAX:", err);
                 }
             }
+
             setInterval(refreshDynamicTable, 3000);
             window.onload = refreshDynamicTable;
         </script>
@@ -191,25 +201,29 @@ def home():
             </thead>
             <tbody id="dynamic-table-body"></tbody>
         </table>
-        <h2>📋 Variables des Arduinos</h2>
-        {% for name, info in arduinos_config.items() %}
-        <h3>Variables de l'Arduino {{ name }}</h3>
+
+        <h2>📋 Informations Arduino (statique)</h2>
         <table>
             <thead>
                 <tr>
                     <th>Nom</th>
-                    <th>Valeur</th>
+                    <th>Info Arduino</th>
+                    <th>Pin Config</th>
+                    <th>Pin Values</th>
                 </tr>
             </thead>
             <tbody>
-                <tr><td>arduino_name</td><td>{{ info.arduino_infos[0] }}</td></tr>
-                <tr><td>arduino_type</td><td>{{ info.arduino_infos[1] }}</td></tr>
-                <tr><td>arduino_adresse_ip</td><td>{{ info.arduino_infos[2] }}</td></tr>
-                <tr><td>arduino_mc_address</td><td>{{ info.arduino_infos[3] }}</td></tr>
-                <tr><td>arduino_data_srv_ip</td><td>{{ info.arduino_infos[4] }}</td></tr>
+                {% for name, info in arduinos_config.items() %}
+                <tr>
+                    <td>{{ name }}</td>
+                    <td>{{ info.config_str }}</td>
+                    <td>{{ info.pin_config | join(';') }}</td>
+                    <td>{{ info.pin_value | join(';') }}</td>
+                </tr>
+                {% endfor %}
             </tbody>
         </table>
-        {% endfor %}
+
         <h2>🛠️ Envoi des actions</h2>
         <table>
             <thead>
@@ -237,6 +251,7 @@ def home():
                 {% endfor %}
             </tbody>
         </table>
+
         <div class="logout">
             <form action="/logout" method="POST">
                 <input type="submit" value="🚪 Se déconnecter">
@@ -246,6 +261,7 @@ def home():
     </html>
     """
     return render_template_string(html, actions=arduinos_actions, arduinos=arduinos, arduinos_config=arduinos_config)
+
 
 
 # -----------------------------
