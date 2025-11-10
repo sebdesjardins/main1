@@ -153,6 +153,7 @@ def home():
             button { padding: 8px 16px; margin-top: 10px; cursor: pointer; border: none; background: #0078D7; color: white; border-radius: 5px; }
             button:hover { background: #005fa3; }
         </style>
+        
         <script>
             // -----------------------------
             // Partie 1 : Tableau dynamique
