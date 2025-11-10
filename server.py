@@ -228,23 +228,27 @@ def home():
             </tbody>
         </table>
         
-        <h2>📋Informations des Arduino connus</h2>
+        <h2>📋 Informations détaillées des Arduinos connus</h2>
+
+        {% for name, info in arduinos_config.items() %}
+        {% set fields = info.config_str.split(';') %}
+        <h3>🔧 Informations de {{ name }}</h3>
         <table>
             <thead>
                 <tr>
-                    <th>Nom</th>
-                    <th>Info des Arduino connus</th>
+                    <th>Nom du champ</th>
+                    <th>Valeur</th>
                 </tr>
             </thead>
             <tbody>
-                {% for name, info in arduinos_config.items() %}
-                <tr>
-                    <td>{{ name }}</td>
-                    <td>{{ info.config_str }}</td>
-                </tr>
-                {% endfor %}
+                <tr><td>Nom de l'Arduino</td><td>{{ fields[0] if fields|length > 0 else '' }}</td></tr>
+                <tr><td>Type</td><td>{{ fields[1] if fields|length > 1 else '' }}</td></tr>
+                <tr><td>Adresse IP</td><td>{{ fields[2] if fields|length > 2 else '' }}</td></tr>
+                <tr><td>Mc Address</td><td>{{ fields[3] if fields|length > 3 else '' }}</td></tr>
+                <tr><td>URL du serveur</td><td>https://{{ fields[4] if fields|length > 4 else '' }}</td></tr>
             </tbody>
         </table>
+        {% endfor %}
 
         <div class="logout">
             <form action="/logout" method="POST">
