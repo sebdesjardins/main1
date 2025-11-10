@@ -189,8 +189,44 @@ def home():
                     console.error("Erreur AJAX:", err);
                 }
             }
+            async function refreshConfigTable() {
+                try {
+                    const response = await fetch('/arduino_config_status');
+                    const data = await response.json();
+                    const container = document.getElementById('config-table-container');
+                    container.innerHTML = '';
+        
+                    for (const [name, info] of Object.entries(data.arduinos_config)) {
+                        const fields = info.config_str.split(';');
+                        const ippub = (fields[5] || '').split(',');
+        
+                        const tableHTML = `
+                            <h3>🔧 Informations de ${name}</h3>
+                            <table>
+                                <thead>
+                                    <tr><th>Nom du champ</th><th>Valeur</th></tr>
+                                </thead>
+                                <tbody>
+                                    <tr><td>Nom de l'Arduino</td><td>${fields[0] || ''}</td></tr>
+                                    <tr><td>Type</td><td>${fields[1] || ''}</td></tr>
+                                    <tr><td>Adresse IP locale</td><td>${fields[2] || ''}</td></tr>
+                                    <tr><td>Mc Address</td><td>${fields[3] || ''}</td></tr>
+                                    <tr><td>URL du serveur</td><td>https://${fields[4] || ''}</td></tr>
+                                    <tr><td>Adresse IP publique</td><td>${ippub[2] || fields[5] || ''}</td></tr>
+                                </tbody>
+                            </table>
+                        `;
+                        container.innerHTML += tableHTML;
+                    }
+                } catch (err) {
+                    console.error("Erreur AJAX (config):", err);
+                }
+            }
             setInterval(refreshDynamicTable, 3000);
-            window.onload = refreshDynamicTable;
+            window.onload = function() {
+                refreshDynamicTable();
+                refreshConfigTable();
+            };
         </script>
     </head>
     <body>
@@ -295,6 +331,19 @@ def status():
         }
     }
     return jsonify(data)
+
+# -----------------------------
+# ROUTE AJAX /arduino_config_status
+# -----------------------------
+@app.route("/arduino_config_status")
+def arduino_config_status():
+    data = {}
+    for name, info in arduinos_config.items():
+        data[name] = {
+            "config_str": info.get("config_str", ""),
+            "last_seen": info.get("last_seen", "")
+        }
+    return jsonify({"arduinos_config": data})
 
 # -----------------------------
 # ACTION MANUELLE
