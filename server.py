@@ -104,10 +104,6 @@ def set_arduino_info():
         # Récupération des champs
         config_str = data.get("arduino_infos", "")  # ex : "ARDUINO_EB20;R4 Wifi;..."
 
-        # Récupération des valeurs des broches
-        pin_config_str = data.get("pin_config", "")
-        pin_value_str = data.get("pin_value", "")
-
         # Conversion des strings en listes d'entiers
         pin_config = [int(x) for x in pin_config_str.split(";")] if pin_config_str else [0]*19
         pin_value = [int(x) for x in pin_value_str.split(";")] if pin_value_str else [0]*19
@@ -121,13 +117,11 @@ def set_arduino_info():
         arduinos_config[name] = {
             "name": name,
             "config_str": config_str,
-            "pin_config": pin_config,
-            "pin_value": pin_value,
+            "pin_config": None,
+            "pin_value": None,
             "last_seen": datetime.utcnow()  # <- corrigé ici
         }
-
         print(f"Arduino {name} mis à jour : {arduinos_config[name]}")
-
         return jsonify({"status": "ok", "message": f"{name} configuration reçue et mise à jour."})
 
     except Exception as e:
@@ -180,13 +174,11 @@ def set_arduino_config():
             config_str = client_ip
 
         # Mise à jour du dictionnaire global
-        arduinos_config[name] = {
-            "name": name,
-            "config_str": config_str,
-            "pin_config": pin_config,
-            "pin_value": pin_analog_value,
-            "last_seen": datetime.utcnow()
-        }
+        arduinos_config[name]["name"] = name
+        arduinos_config[name]["pin_config"] = pin_config
+        arduinos_config[name]["pin_value"] = pin_analog_value
+        arduinos_config[name]["last_seen"] = datetime.utcnow()
+
 
         print(f"Arduino {name} pin_config mis à jour : {arduinos_config[name]}")
 
@@ -407,7 +399,7 @@ def home_arduino_config():
                         const bit3 = (pc >> 3) & 1;
                         const bit4 = (pc >> 4) & 1;
                         const bit5 = (pc >> 5) & 1;       
-                        const col_type = i<14 ? "DIGITALE" : "ANALOGIQUE";
+                        const col_type = bit0  ? "DIGITALE" : "ANALOGIQUE";
                         const col_sortie_type = bit1 ? "DIGITALE" : "ANALOGIQUE";
                         const col_analog_out = bit2 ? "ANALOGIQUE" : "";
                         const col_used = bit3 ? "Réservée" : "Active";
