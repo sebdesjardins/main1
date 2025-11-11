@@ -355,11 +355,9 @@ def home():
 def home_arduino_config():
     if not session.get("logged_in"):
         return redirect(url_for("login"))
-
     arduino_name = request.args.get("arduino_name")
     if not arduino_name or arduino_name not in arduinos_config:
         return f"Erreur : Arduino '{arduino_name}' inconnu", 404
-
     html = """
     <html>
     <head>
@@ -391,8 +389,7 @@ def home_arduino_config():
                         <tr><td>Mc Address</td><td>${fields[3] || ''}</td></tr>
                         <tr><td>URL du serveur</td><td>https://${fields[4] || ''}</td></tr>
                         <tr><td>Adresse IP publique</td><td>${fields[5] || ''}</td></tr>
-                    `;
-        
+                    `;       
                     // --- Tableau broches ---
                     const pinConfig = arduino.pin_config || [];
                     const pinValue = arduino.pin_value || [];
@@ -409,8 +406,7 @@ def home_arduino_config():
                         const bit2 = (pc >> 2) & 1;
                         const bit3 = (pc >> 3) & 1;
                         const bit4 = (pc >> 4) & 1;
-                        const bit5 = (pc >> 5) & 1;
-        
+                        const bit5 = (pc >> 5) & 1;       
                         const col_type = i<14 ? "DIGITALE" : "ANALOGIQUE";
                         const col_sortie_type = bit1 ? "DIGITALE" : "ANALOGIQUE";
                         const col_analog_out = bit2 ? "ANALOGIQUE" : "";
@@ -418,8 +414,7 @@ def home_arduino_config():
                         const col_dir = bit4 ? "SORTIE" : "ENTREE";
                         let col_dig_val = bit5 ? "HIGH" : "LOW";
                         if(bit2==0 && pinValue[i]!==0 && pinValue[i]!==1024) col_dig_val = "";
-                        const col_ana_val = bit2 ? pinValue[i] : "";
-        
+                        const col_ana_val = bit2 ? pinValue[i] : "";       
                         const rowHTML = `
                             <tr>
                                 <td>${i}</td>
@@ -438,8 +433,7 @@ def home_arduino_config():
                 } catch(err){
                     console.error("Erreur AJAX:", err);
                 }
-            }
-        
+            }        
             setInterval(refreshArduinoData, 3000);
             window.onload = refreshArduinoData;
         </script>
@@ -450,7 +444,6 @@ def home_arduino_config():
             <thead><tr><th>Nom du champ</th><th>Valeur</th></tr></thead>
             <tbody id="info-table-body"></tbody>
         </table>
-
         <h2>📊 Configuration détaillée des broches</h2>
         <table>
             <thead>
@@ -468,7 +461,6 @@ def home_arduino_config():
             </thead>
             <tbody id="pins-table-body"></tbody>
         </table>
-
         <div class="logout">
             <form action="/logout" method="POST">
                 <input type="submit" value="🚪 Se déconnecter">
@@ -477,7 +469,6 @@ def home_arduino_config():
     </body>
     </html>
     """
-
     return render_template_string(html, arduino_name=arduino_name)
 
 
