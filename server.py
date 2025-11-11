@@ -102,21 +102,21 @@ def set_arduino_info():
         client_ip = request.headers.get('X-Forwarded-For', request.remote_addr)
 
         # Récupération des champs
-        config_str = data.get("arduino_infos", "")  # ex : "ARDUINO_EB20;R4 Wifi;..."
+        infos_str = data.get("arduino_infos", "")  # ex : "ARDUINO_EB20;R4 Wifi;..."
 
         # Conversion des strings en listes d'entiers
-        pin_config = [int(x) for x in pin_config_str.split(";")] if pin_config_str else [0]*19
-        pin_value = [int(x) for x in pin_value_str.split(";")] if pin_value_str else [0]*19
-        # Ajout de l'adresse IP à la fin de config_str
-        if config_str:
-            config_str += ";" + client_ip
+        infos = [int(x) for x in infos_str.split(";")] if infos_str else [0]*19
+
+        # Ajout de l'adresse IP à la fin de infos_str
+        if infos_str:
+            infos_str += ";" + client_ip
         else:
-            config_str = client_ip
+            infos_str = client_ip
 
         # Mise à jour du dictionnaire global
         arduinos_config[name] = {
             "name": name,
-            "config_str": config_str,
+            "config_str": infos,
             "pin_config": None,
             "pin_value": None,
             "last_seen": datetime.utcnow()  # <- corrigé ici
