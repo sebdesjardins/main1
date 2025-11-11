@@ -360,15 +360,6 @@ def home_arduino_config():
     if not arduino_name or arduino_name not in arduinos_config:
         return f"Erreur : Arduino '{arduino_name}' inconnu", 404
 
-    info = arduinos_config[arduino_name]
-
-    # On récupère pin_config et pin_value
-    pin_config = info.get("pin_config", [0]*19)
-    pin_value = info.get("pin_value", [0]*19)
-
-    # Noms des broches D0-D13 et A0-A5
-    pin_names = [f"D{i}" for i in range(14)] + [f"A{i}" for i in range(6)]
-
     html = """
     <html>
     <head>
@@ -379,26 +370,85 @@ def home_arduino_config():
             th, td { padding: 8px; text-align: center; border: 1px solid #ddd; }
             th { background-color: #0078D7; color: white; }
             tr:nth-child(even) { background-color: #f2f2f2; }
-            .ok { color: green; font-weight: bold; }
-            .off { color: red; font-weight: bold; }
             h2, h3 { color: #0078D7; }
         </style>
+        <script>
+            async function refreshArduinoData() {
+                try {
+                    const response = await fetch('/arduino_config_status');
+                    const data = await response.json();
+                    const arduinoName = {{ arduino_name|tojson }};
+                    const arduino = data.arduinos_config[arduinoName];
+                    if (!arduino) return;
+        
+                    // --- Infos synthétiques ---
+                    const fields = arduino.config_str.split(';');
+                    const infoTableBody = document.getElementById('info-table-body');
+                    infoTableBody.innerHTML = `
+                        <tr><td>Nom de l'Arduino</td><td>${fields[0] || ''}</td></tr>
+                        <tr><td>Type</td><td>${fields[1] || ''}</td></tr>
+                        <tr><td>Adresse IP locale</td><td>${fields[2] || ''}</td></tr>
+                        <tr><td>Mc Address</td><td>${fields[3] || ''}</td></tr>
+                        <tr><td>URL du serveur</td><td>https://${fields[4] || ''}</td></tr>
+                        <tr><td>Adresse IP publique</td><td>${fields[5] || ''}</td></tr>
+                    `;
+        
+                    // --- Tableau broches ---
+                    const pinConfig = arduino.pin_config || [];
+                    const pinValue = arduino.pin_value || [];
+                    const pinNames = [];
+                    for(let i=0;i<14;i++) pinNames.push("D"+i);
+                    for(let i=0;i<6;i++) pinNames.push("A"+i);
+        
+                    const tableBody = document.getElementById('pins-table-body');
+                    tableBody.innerHTML = '';
+                    for(let i=0; i<19; i++){
+                        const pc = pinConfig[i] || 0;
+                        const bit0 = (pc >> 0) & 1;
+                        const bit1 = (pc >> 1) & 1;
+                        const bit2 = (pc >> 2) & 1;
+                        const bit3 = (pc >> 3) & 1;
+                        const bit4 = (pc >> 4) & 1;
+                        const bit5 = (pc >> 5) & 1;
+        
+                        const col_type = i<14 ? "DIGITALE" : "ANALOGIQUE";
+                        const col_sortie_type = bit1 ? "DIGITALE" : "ANALOGIQUE";
+                        const col_analog_out = bit2 ? "ANALOGIQUE" : "";
+                        const col_used = bit3 ? "Réservée" : "Active";
+                        const col_dir = bit4 ? "SORTIE" : "ENTREE";
+                        let col_dig_val = bit5 ? "HIGH" : "LOW";
+                        if(bit2==0 && pinValue[i]!==0 && pinValue[i]!==1024) col_dig_val = "";
+                        const col_ana_val = bit2 ? pinValue[i] : "";
+        
+                        const rowHTML = `
+                            <tr>
+                                <td>${i}</td>
+                                <td>${pinNames[i]}</td>
+                                <td>${col_type}</td>
+                                <td>${col_sortie_type}</td>
+                                <td>${col_analog_out}</td>
+                                <td>${col_used}</td>
+                                <td>${col_dir}</td>
+                                <td>${col_dig_val}</td>
+                                <td>${col_ana_val}</td>
+                            </tr>
+                        `;
+                        tableBody.innerHTML += rowHTML;
+                    }
+                } catch(err){
+                    console.error("Erreur AJAX:", err);
+                }
+            }
+        
+            setInterval(refreshArduinoData, 3000);
+            window.onload = refreshArduinoData;
+        </script>
     </head>
     <body>
         <h2>🔧 Informations synthétiques de {{ arduino_name }}</h2>
         <table>
-            <thead>
-                <tr><th>Nom du champ</th><th>Valeur</th></tr>
-            </thead>
-            <tbody>
-                {% set fields = info.config_str.split(';') %}
-                <tr><td>Nom de l'Arduino</td><td>{{ fields[0] if fields|length > 0 else '' }}</td></tr>
-                <tr><td>Type</td><td>{{ fields[1] if fields|length > 1 else '' }}</td></tr>
-                <tr><td>Adresse IP locale</td><td>{{ fields[2] if fields|length > 2 else '' }}</td></tr>
-                <tr><td>Mc Address</td><td>{{ fields[3] if fields|length > 3 else '' }}</td></tr>
-                <tr><td>URL du serveur</td><td>https://{{ fields[4] if fields|length > 4 else '' }}</td></tr>
-                <tr><td>Adresse IP publique</td><td>{{ fields[5] if fields|length > 5 else '' }}</td></tr>
-            </tbody>
+            <thead><tr><th>Nom du champ</th><th>Valeur</th></tr></thead>
+            <tbody id="info-table-body"></tbody>
         </table>
 
         <h2>📊 Configuration détaillée des broches</h2>
@@ -416,38 +466,7 @@ def home_arduino_config():
                     <th>Valeur analogique</th>
                 </tr>
             </thead>
-            <tbody>
-                {% for i in range(19) %}
-                {% set pc = pin_config[i] %}
-                {% set bit0 = (pc >> 0) & 1 %}
-                {% set bit1 = (pc >> 1) & 1 %}
-                {% set bit2 = (pc >> 2) & 1 %}
-                {% set bit3 = (pc >> 3) & 1 %}
-                {% set bit4 = (pc >> 4) & 1 %}
-                {% set bit5 = (pc >> 5) & 1 %}
-
-                {% set col_type = "DIGITALE" if i<14 else "ANALOGIQUE" %}
-                {% set col_sortie_type = "DIGITALE" if bit1 else "ANALOGIQUE" %}
-                {% set col_analog_out = "ANALOGIQUE" if not bit2 else "" %}
-                {% set col_used = "Active" if not bit3 else "Réservée" %}
-                {% set col_dir = "ENTREE" if not bit4 else "SORTIE" %}
-                {% set col_dig_val = "HIGH" if bit5 else "LOW" %}
-                {% set col_dig_val = "" if (bit2==0 and pin_value[i] not in [0,1024]) else col_dig_val %}
-                {% set col_ana_val = pin_value[i] if bit2==1 else "" %}
-
-                <tr>
-                    <td>{{ i }}</td>
-                    <td>{{ pin_names[i] }}</td>
-                    <td>{{ col_type }}</td>
-                    <td>{{ col_sortie_type }}</td>
-                    <td>{{ col_analog_out }}</td>
-                    <td>{{ col_used }}</td>
-                    <td>{{ col_dir }}</td>
-                    <td>{{ col_dig_val }}</td>
-                    <td>{{ col_ana_val }}</td>
-                </tr>
-                {% endfor %}
-            </tbody>
+            <tbody id="pins-table-body"></tbody>
         </table>
 
         <div class="logout">
@@ -459,7 +478,7 @@ def home_arduino_config():
     </html>
     """
 
-    return render_template_string(html, arduino_name=arduino_name, info=info, pin_config=pin_config, pin_value=pin_value, pin_names=[f"D{i}" for i in range(14)] + [f"A{i}" for i in range(6)])
+    return render_template_string(html, arduino_name=arduino_name)
 
 
 # -----------------------------
