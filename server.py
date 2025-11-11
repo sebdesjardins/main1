@@ -377,6 +377,7 @@ def home_arduino_config():
         
                     // --- Infos synthétiques ---
                     const fields = arduino.config_str.split(';');
+                    const ippub = (fields[5] || '').split(',');
                     const infoTableBody = document.getElementById('info-table-body');
                     infoTableBody.innerHTML = `
                         <tr><td>Nom de l'Arduino</td><td>${fields[0] || ''}</td></tr>
@@ -384,7 +385,7 @@ def home_arduino_config():
                         <tr><td>Adresse IP locale</td><td>${fields[2] || ''}</td></tr>
                         <tr><td>Mc Address</td><td>${fields[3] || ''}</td></tr>
                         <tr><td>URL du serveur</td><td>https://${fields[4] || ''}</td></tr>
-                        <tr><td>Adresse IP publique</td><td>${fields[5] || ''}</td></tr>
+                        <tr><td>Adresse IP publique</td><td>${ippub[0] || fields[5] || ''}</td></tr>
                     `;       
                     // --- Tableau broches ---
                     const pinConfig = arduino.pin_config || [];
