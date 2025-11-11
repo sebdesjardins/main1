@@ -348,6 +348,118 @@ def home():
     """
     return render_template_string(html, actions=arduinos_actions, arduinos=arduinos, arduinos_config=arduinos_config)
 
+# -----------------------------
+# PAGE SPECIFIQUE POUR UN ARDUINO /HOME_ARDUINO_CONFIG
+# -----------------------------
+@app.route("/home_arduino_config")
+def home_arduino_config():
+    if not session.get("logged_in"):
+        return redirect(url_for("login"))
+
+    arduino_name = request.args.get("arduino_name")
+    if not arduino_name or arduino_name not in arduinos_config:
+        return f"Erreur : Arduino '{arduino_name}' inconnu", 404
+
+    info = arduinos_config[arduino_name]
+
+    # On récupère pin_config et pin_value
+    pin_config = info.get("pin_config", [0]*19)
+    pin_value = info.get("pin_value", [0]*19)
+
+    # Noms des broches D0-D13 et A0-A5
+    pin_names = [f"D{i}" for i in range(14)] + [f"A{i}" for i in range(6)]
+
+    html = """
+    <html>
+    <head>
+        <title>Configuration {{ arduino_name }}</title>
+        <style>
+            body { font-family: Arial, sans-serif; background-color: #f7f7f7; margin: 20px; }
+            table { border-collapse: collapse; width: 90%; background: white; box-shadow: 0 0 10px rgba(0,0,0,0.1); margin-bottom: 30px; }
+            th, td { padding: 8px; text-align: center; border: 1px solid #ddd; }
+            th { background-color: #0078D7; color: white; }
+            tr:nth-child(even) { background-color: #f2f2f2; }
+            .ok { color: green; font-weight: bold; }
+            .off { color: red; font-weight: bold; }
+            h2, h3 { color: #0078D7; }
+        </style>
+    </head>
+    <body>
+        <h2>🔧 Informations synthétiques de {{ arduino_name }}</h2>
+        <table>
+            <thead>
+                <tr><th>Nom du champ</th><th>Valeur</th></tr>
+            </thead>
+            <tbody>
+                {% set fields = info.config_str.split(';') %}
+                <tr><td>Nom de l'Arduino</td><td>{{ fields[0] if fields|length > 0 else '' }}</td></tr>
+                <tr><td>Type</td><td>{{ fields[1] if fields|length > 1 else '' }}</td></tr>
+                <tr><td>Adresse IP locale</td><td>{{ fields[2] if fields|length > 2 else '' }}</td></tr>
+                <tr><td>Mc Address</td><td>{{ fields[3] if fields|length > 3 else '' }}</td></tr>
+                <tr><td>URL du serveur</td><td>https://{{ fields[4] if fields|length > 4 else '' }}</td></tr>
+                <tr><td>Adresse IP publique</td><td>{{ fields[5] if fields|length > 5 else '' }}</td></tr>
+            </tbody>
+        </table>
+
+        <h2>📊 Configuration détaillée des broches</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>No broche</th>
+                    <th>Nom</th>
+                    <th>Type</th>
+                    <th>Type sortie</th>
+                    <th>Sortie analogique</th>
+                    <th>Broche utilisée</th>
+                    <th>Entrée/Sortie</th>
+                    <th>Valeur digitale</th>
+                    <th>Valeur analogique</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for i in range(19) %}
+                {% set pc = pin_config[i] %}
+                {% set bit0 = (pc >> 0) & 1 %}
+                {% set bit1 = (pc >> 1) & 1 %}
+                {% set bit2 = (pc >> 2) & 1 %}
+                {% set bit3 = (pc >> 3) & 1 %}
+                {% set bit4 = (pc >> 4) & 1 %}
+                {% set bit5 = (pc >> 5) & 1 %}
+
+                {% set col_type = "DIGITALE" if i<14 else "ANALOGIQUE" %}
+                {% set col_sortie_type = "DIGITALE" if bit1 else "ANALOGIQUE" %}
+                {% set col_analog_out = "ANALOGIQUE" if not bit2 else "" %}
+                {% set col_used = "Active" if not bit3 else "Réservée" %}
+                {% set col_dir = "ENTREE" if not bit4 else "SORTIE" %}
+                {% set col_dig_val = "HIGH" if bit5 else "LOW" %}
+                {% set col_dig_val = "" if (bit2==0 and pin_value[i] not in [0,1024]) else col_dig_val %}
+                {% set col_ana_val = pin_value[i] if bit2==1 else "" %}
+
+                <tr>
+                    <td>{{ i }}</td>
+                    <td>{{ pin_names[i] }}</td>
+                    <td>{{ col_type }}</td>
+                    <td>{{ col_sortie_type }}</td>
+                    <td>{{ col_analog_out }}</td>
+                    <td>{{ col_used }}</td>
+                    <td>{{ col_dir }}</td>
+                    <td>{{ col_dig_val }}</td>
+                    <td>{{ col_ana_val }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+
+        <div class="logout">
+            <form action="/logout" method="POST">
+                <input type="submit" value="🚪 Se déconnecter">
+            </form>
+        </div>
+    </body>
+    </html>
+    """
+
+    return render_template_string(html, arduino_name=arduino_name, info=info, pin_config=pin_config, pin_value=pin_value, pin_names=[f"D{i}" for i in range(14)] + [f"A{i}" for i in range(6)])
 
 
 # -----------------------------
