@@ -102,7 +102,7 @@ def set_arduino_info():
         client_ip = request.headers.get('X-Forwarded-For', request.remote_addr)
 
         # Récupération des champs
-        config_str = data.get("arduino_infos", "")  # ex : "ARDUINO_EB20;R4 Wifi;..."
+        infos_str = data.get("arduino_infos", "")  # ex : "ARDUINO_EB20;R4 Wifi;..."
 
         # Récupération des valeurs des broches
         pin_config_str = data.get("pin_config", "")
@@ -112,15 +112,15 @@ def set_arduino_info():
         pin_config = [int(x) for x in pin_config_str.split(";")] if pin_config_str else [0]*19
         pin_value = [int(x) for x in pin_value_str.split(";")] if pin_value_str else [0]*19
         # Ajout de l'adresse IP à la fin de config_str
-        if config_str:
-            config_str += ";" + client_ip
+        if infos_str:
+            infos_str += ";" + client_ip
         else:
-            config_str = client_ip
+            infos_str = client_ip
 
         # Mise à jour du dictionnaire global
         arduinos_config[name] = {
             "name": name,
-            "config_str": config_str,
+            "info_str": infos_str,
             "pin_config": None,
             "pin_value": None,
             "last_seen": datetime.utcnow()  # <- corrigé ici
@@ -218,12 +218,10 @@ def home():
             .logout { margin-top: 15px; }
             button { padding: 8px 16px; margin-top: 10px; cursor: pointer; border: none; background: #0078D7; color: white; border-radius: 5px; }
             button:hover { background: #005fa3; }
+            .link-config { margin-top: 5px; display: block; }
         </style>
-        
+
         <script>
-            // -----------------------------
-            // Partie 1 : Tableau dynamique
-            // -----------------------------
             async function refreshDynamicTable() {
                 try {
                     const response = await fetch('/status');
@@ -247,17 +245,17 @@ def home():
                     console.error("Erreur AJAX:", err);
                 }
             }
-            async function refreshConfigTable() {
+
+            async function refreshInfoTable() {
                 try {
-                    const response = await fetch('/arduino_config_status');
+                    const response = await fetch('/arduino_infos_status');
                     const data = await response.json();
-                    const container = document.getElementById('config-table-container');
+                    const container = document.getElementById('info-table-container');
                     container.innerHTML = '';
-        
-                    for (const [name, info] of Object.entries(data.arduinos_config)) {
-                        const fields = info.config_str.split(';');
+
+                    for (const [name, info] of Object.entries(data.arduinos_info)) {
+                        const fields = info.infos_str.split(';');
                         const ippub = (fields[5] || '').split(',');
-        
                         const tableHTML = `
                             <h3>🔧 Informations de ${name}</h3>
                             <table>
@@ -273,17 +271,21 @@ def home():
                                     <tr><td>Adresse IP publique</td><td>${ippub[0] || fields[5] || ''}</td></tr>
                                 </tbody>
                             </table>
+                            <a class="link-config" href="/home_arduino_config?arduino_name=${name}">➡️ Voir la configuration détaillée</a>
                         `;
                         container.innerHTML += tableHTML;
                     }
                 } catch (err) {
-                    console.error("Erreur AJAX (config):", err);
+                    console.error("Erreur AJAX (infos):", err);
                 }
             }
+
             setInterval(refreshDynamicTable, 3000);
+            setInterval(refreshInfoTable, 5000);
+
             window.onload = function() {
                 refreshDynamicTable();
-                refreshConfigTable();
+                refreshInfoTable();
             };
         </script>
     </head>
@@ -329,10 +331,9 @@ def home():
                 {% endfor %}
             </tbody>
         </table>
-        
-        <h2>📋 Informations détaillées des Arduinos connus</h2>
 
-        <div id="config-table-container"></div>
+        <h2>📋 Informations détaillées des Arduinos connus</h2>
+        <div id="info-table-container"></div>
 
         <div class="logout">
             <form action="/logout" method="POST">
@@ -342,7 +343,8 @@ def home():
     </body>
     </html>
     """
-    return render_template_string(html, actions=arduinos_actions, arduinos=arduinos, arduinos_config=arduinos_config)
+    return render_template_string(html, actions=arduinos_actions, arduinos=arduinos)
+
 
 # -----------------------------
 # PAGE SPECIFIQUE POUR UN ARDUINO /HOME_ARDUINO_CONFIG
@@ -351,9 +353,11 @@ def home():
 def home_arduino_config():
     if not session.get("logged_in"):
         return redirect(url_for("login"))
+
     arduino_name = request.args.get("arduino_name")
     if not arduino_name or arduino_name not in arduinos_config:
         return f"Erreur : Arduino '{arduino_name}' inconnu", 404
+
     html = """
     <html>
     <head>
@@ -369,14 +373,14 @@ def home_arduino_config():
         <script>
             async function refreshArduinoData() {
                 try {
-                    const response = await fetch('/arduino_config_status');
+                    const response = await fetch('/arduino_infos_status');
                     const data = await response.json();
                     const arduinoName = {{ arduino_name|tojson }};
-                    const arduino = data.arduinos_config[arduinoName];
+                    const arduino = data.arduinos_info[arduinoName];  // <-- utiliser arduinos_info
                     if (!arduino) return;
-        
+
                     // --- Infos synthétiques ---
-                    const fields = arduino.config_str.split(';');
+                    const fields = arduino.infos_str.split(';'); // <-- infos_str
                     const ippub = (fields[5] || '').split(',');
                     const infoTableBody = document.getElementById('info-table-body');
                     infoTableBody.innerHTML = `
@@ -386,14 +390,15 @@ def home_arduino_config():
                         <tr><td>Mc Address</td><td>${fields[3] || ''}</td></tr>
                         <tr><td>URL du serveur</td><td>https://${fields[4] || ''}</td></tr>
                         <tr><td>Adresse IP publique</td><td>${ippub[0] || fields[5] || ''}</td></tr>
-                    `;       
+                    `;
+
                     // --- Tableau broches ---
                     const pinConfig = arduino.pin_config || [];
                     const pinValue = arduino.pin_value || [];
                     const pinNames = [];
                     for(let i=0;i<14;i++) pinNames.push("D"+i);
                     for(let i=0;i<6;i++) pinNames.push("A"+i);
-        
+
                     const tableBody = document.getElementById('pins-table-body');
                     tableBody.innerHTML = '';
                     for(let i=0; i<19; i++){
@@ -427,10 +432,11 @@ def home_arduino_config():
                         `;
                         tableBody.innerHTML += rowHTML;
                     }
+
                 } catch(err){
                     console.error("Erreur AJAX:", err);
                 }
-            }        
+            }
             setInterval(refreshArduinoData, 3000);
             window.onload = refreshArduinoData;
         </script>
@@ -458,6 +464,8 @@ def home_arduino_config():
             </thead>
             <tbody id="pins-table-body"></tbody>
         </table>
+        <a class="link-config" href="/home">➡️ Retour vers la page d'accueil</a>
+        <p></p>
         <div class="logout">
             <form action="/logout" method="POST">
                 <input type="submit" value="🚪 Se déconnecter">
@@ -494,17 +502,34 @@ def status():
     return jsonify(data)
 
 # -----------------------------
+# ROUTE AJAX /arduino_infos_status
+# -----------------------------
+@app.route("/arduino_infos_status")
+def arduino_infos_status():
+    data = {}
+    for name, info in arduinos_config.items():  # <-- garder arduinos_config
+        data[name] = {
+            "infos_str": info.get("info_str", ""),  # <-- info_str et non config_str
+            "last_seen": info.get("last_seen", "")
+        }
+    return jsonify({"arduinos_info": data})  # <-- clé JSON peut rester arduinos_info
+
+# -----------------------------
 # ROUTE AJAX /arduino_config_status
 # -----------------------------
 @app.route("/arduino_config_status")
 def arduino_config_status():
     data = {}
-    for name, info in arduinos_config.items():
+    for name, info in arduinos_config.items():  # On garde le stockage côté serveur dans arduinos_config
         data[name] = {
-            "config_str": info.get("config_str", ""),
+            "infos_str": info.get("info_str", ""),      # Infos synthétiques de l'Arduino
+            "pin_config": info.get("pin_config", []),  # Tableau des broches
+            "pin_value": info.get("pin_value", []),    # Valeurs analogiques/digitales
             "last_seen": info.get("last_seen", "")
         }
-    return jsonify({"arduinos_config": data})
+    # La clé JSON renvoyée côté JS sera "arduinos_info" pour rester cohérent
+    return jsonify({"arduinos_info": data})
+
 
 # -----------------------------
 # ACTION MANUELLE
