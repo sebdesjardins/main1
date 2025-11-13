@@ -363,80 +363,100 @@ def home_arduino_config():
     <head>
         <title>Configuration {{ arduino_name }}</title>
         <style>
-            body { font-family: Arial, sans-serif; background-color: #f7f7f7; margin: 20px; }
-            table { border-collapse: collapse; width: 90%; background: white; box-shadow: 0 0 10px rgba(0,0,0,0.1); margin-bottom: 30px; }
+            body { font-family: Arial, sans-serif; background: #f7f7f7; margin: 20px; }
+            table { border-collapse: collapse; width: 95%; background: white; box-shadow: 0 0 10px rgba(0,0,0,0.1); margin-bottom: 18px; }
             th, td { padding: 8px; text-align: center; border: 1px solid #ddd; }
             th { background-color: #0078D7; color: white; }
             tr:nth-child(even) { background-color: #f2f2f2; }
-            h2, h3 { color: #0078D7; }
+            .gray-cell { background-color: #d3d3d3; color: #666; }
+            h2 { color: #0078D7; }
+            a.link-config { text-decoration: none; color: #0078D7; font-weight: bold; }
+            a.link-config:hover { text-decoration: underline; }
         </style>
         <script>
             async function refreshArduinoData() {
                 try {
-                    const response = await fetch('/arduino_infos_status');
+                    const response = await fetch('/arduino_config_status');
                     const data = await response.json();
                     const arduinoName = {{ arduino_name|tojson }};
-                    const arduino = data.arduinos_info[arduinoName];  // <-- utiliser arduinos_info
+                    const arduino = data.arduinos_info[arduinoName];
                     if (!arduino) return;
 
                     // --- Infos synthétiques ---
-                    const fields = arduino.infos_str.split(';'); // <-- infos_str
+                    const fields = (arduino.infos_str || "").split(';');
                     const ippub = (fields[5] || '').split(',');
                     const infoTableBody = document.getElementById('info-table-body');
                     infoTableBody.innerHTML = `
                         <tr><td>Nom de l'Arduino</td><td>${fields[0] || ''}</td></tr>
                         <tr><td>Type</td><td>${fields[1] || ''}</td></tr>
                         <tr><td>Adresse IP locale</td><td>${fields[2] || ''}</td></tr>
-                        <tr><td>Mc Address</td><td>${fields[3] || ''}</td></tr>
-                        <tr><td>URL du serveur</td><td>https://${fields[4] || ''}</td></tr>
+                        <tr><td>Mac Address</td><td>${fields[3] || ''}</td></tr>
+                        <tr><td>URL du serveur</td><td>http://${fields[4] || ''}</td></tr>
                         <tr><td>Adresse IP publique</td><td>${ippub[0] || fields[5] || ''}</td></tr>
                     `;
 
-                    // --- Tableau broches ---
-                    const pinConfig = arduino.pin_config || [];
-                    const pinValue = arduino.pin_value || [];
-                    const pinNames = [];
-                    for(let i=0;i<14;i++) pinNames.push("D"+i);
-                    for(let i=0;i<6;i++) pinNames.push("A"+i);
+                    // --- Tableau des broches ---
+                    const pinConfig = Array.isArray(arduino.pin_config) ? arduino.pin_config : [];
+                    const pinValue  = Array.isArray(arduino.pin_value)  ? arduino.pin_value  : [];
 
+                    const pinNames = [];
+                    for (let i = 0; i < 14; i++) pinNames.push("D"+i);
+                    for (let i = 0; i < 6;  i++) pinNames.push("A"+i);
+
+                    const pwmPins = ["D3","D5","D6","D9","D10","D11"];
                     const tableBody = document.getElementById('pins-table-body');
                     tableBody.innerHTML = '';
-                    for(let i=0; i<19; i++){
-                        const pc = pinConfig[i] || 0;
-                        const bit0 = (pc >> 0) & 1;
+
+                    const maxLen = Math.max(pinNames.length, pinConfig.length, pinValue.length);
+
+                    for (let i = 0; i < maxLen; i++) {
+                        const name = (i < pinNames.length) ? pinNames[i] :
+                                     (i < 14 ? "D"+i : "A"+(i-14));
+
+                        const pc = (i < pinConfig.length) ? Number(pinConfig[i]) : 0;
+                        const rawVal = (i < pinValue.length) ? pinValue[i] : null;
+                        const valNum = (rawVal === null || rawVal === "") ? null : Number(rawVal);
+
                         const bit1 = (pc >> 1) & 1;
-                        const bit2 = (pc >> 2) & 1;
-                        const bit3 = (pc >> 3) & 1;
+                        const bit3 = (pc >> 3) & 1; // réservé
                         const bit4 = (pc >> 4) & 1;
-                        const bit5 = (pc >> 5) & 1;       
-                        const col_type = bit0  ? "DIGITALE" : "ANALOGIQUE";
-                        const col_sortie_type = bit1 ? "DIGITALE" : "ANALOGIQUE";
-                        const col_analog_out = bit2 ? "ANALOGIQUE" : "";
+
+                        const isDigitalName = i < 14;
+                        const col_type = isDigitalName ? "DIGITALE" : "ANALOGIQUE";
+                        const col_pwm_possible = pwmPins.includes(name) ? "PWM" : "";
+                        const col_used_as = bit1 ? "DIGITALE" : "ANALOGIQUE";
                         const col_used = bit3 ? "Réservée" : "Active";
-                        const col_dir = bit4 ? "SORTIE" : "ENTREE";
-                        let col_dig_val = bit5 ? "HIGH" : "LOW";
-                        if(bit2==0 && pinValue[i]!==0 && pinValue[i]!==1024) col_dig_val = "";
-                        const col_ana_val = bit2 ? pinValue[i] : "";       
+                        const col_dir = bit4 ? "SORTIE" : "ENTRÉE";
+
+                        const col_ana_val = (valNum !== null && !isNaN(valNum)) ? String(valNum) : "";
+                        let col_dig_val = "";
+                        if (valNum !== null && !isNaN(valNum)) {
+                            if (valNum === 0) col_dig_val = "LOW";
+                            else if (valNum === 1024) col_dig_val = "HIGH";
+                        }
+
+                        const reserved = (bit3 === 1);
+
                         const rowHTML = `
                             <tr>
                                 <td>${i}</td>
-                                <td>${pinNames[i]}</td>
+                                <td>${name}</td>
                                 <td>${col_type}</td>
-                                <td>${col_sortie_type}</td>
-                                <td>${col_analog_out}</td>
+                                <td>${col_pwm_possible}</td>
+                                <td>${col_used_as}</td>
                                 <td>${col_used}</td>
-                                <td>${col_dir}</td>
-                                <td>${col_dig_val}</td>
-                                <td>${col_ana_val}</td>
+                                <td class="${reserved ? 'gray-cell' : ''}">${reserved ? '' : col_dir}</td>
+                                <td class="${reserved ? 'gray-cell' : ''}">${reserved ? '' : col_dig_val}</td>
+                                <td class="${reserved ? 'gray-cell' : ''}">${reserved ? '' : col_ana_val}</td>
                             </tr>
                         `;
                         tableBody.innerHTML += rowHTML;
                     }
-
-                } catch(err){
+                } catch (err) {
                     console.error("Erreur AJAX:", err);
                 }
             }
+
             setInterval(refreshArduinoData, 3000);
             window.onload = refreshArduinoData;
         </script>
@@ -447,6 +467,7 @@ def home_arduino_config():
             <thead><tr><th>Nom du champ</th><th>Valeur</th></tr></thead>
             <tbody id="info-table-body"></tbody>
         </table>
+
         <h2>📊 Configuration détaillée des broches</h2>
         <table>
             <thead>
@@ -454,18 +475,21 @@ def home_arduino_config():
                     <th>No broche</th>
                     <th>Nom</th>
                     <th>Type</th>
-                    <th>Type sortie</th>
-                    <th>Sortie analogique</th>
+                    <th>PWM possible</th>
+                    <th>Broche utilisée comme</th>
                     <th>Broche utilisée</th>
-                    <th>Entrée/Sortie</th>
+                    <th>Entrée / Sortie</th>
                     <th>Valeur digitale</th>
                     <th>Valeur analogique</th>
                 </tr>
             </thead>
             <tbody id="pins-table-body"></tbody>
         </table>
+
+        <p><i>ℹ️ Les sorties analogiques sont simulées par PWM sur D3, D5, D6, D9, D10, D11.</i></p>
+
         <a class="link-config" href="/home">➡️ Retour vers la page d'accueil</a>
-        <p></p>
+        <br><br>
         <div class="logout">
             <form action="/logout" method="POST">
                 <input type="submit" value="🚪 Se déconnecter">
@@ -475,6 +499,7 @@ def home_arduino_config():
     </html>
     """
     return render_template_string(html, arduino_name=arduino_name)
+
 
 
 # -----------------------------
