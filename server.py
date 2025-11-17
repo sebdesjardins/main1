@@ -13,36 +13,77 @@ arduinos = {}  # { name: { 'last_seen': datetime, 'action': str, 'connected': bo
 # Dictionnaire global pour stocker toutes les configs Arduino
 arduinos_config = {}  # { "ARDUINO_EB20": { "name":..., "config_str":..., "pin_config": [...], "pin_value": [...] } }
 
+# -----------------------------
+# ROUTE POUR ENVOYER UNE VARIABLE DE L'ARDUINOS
+# -----------------------------
+@app.route("/arduino_vars", methods=["POST"])
+def arduino_vars():
+    data = request.get_json(force=True)
+    key  = data.get("key", "")
+    name = data.get("name", "")
+    var  = data.get("var", "")  # string "nom=valeur"
+
+    if key != SECURITY_KEY:
+        return "Forbidden", 403
+
+    if "=" in var:
+        nom, valeur = var.split("=", 1)
+
+        if name not in arduinos:
+            arduinos[name] = {"vars": { "arrosage": {} }, "srv_queue": []}
+
+        # Extraire le nom de l'application
+        app_name = nom.split(".")[0]  # ex: "arrosage.i.secheresse_pot1" -> "arrosage"
+
+
+        if "vars" not in arduinos[name]:
+            arduinos[name]["vars"] = {}
+
+        if app_name not in arduinos[name]["vars"]:
+            arduinos[name]["vars"][app_name] = {}
+
+        arduinos[name]["vars"][app_name][nom] = valeur
+        print("RECEPTION VARIABLE DE L'ARDUINO : APPLICATION="+app_name+"  NOM_VARIABLE=" + nom + "  VALEUR=" + valeur + "\n")
+
+    return "OK"
 
 
 # -----------------------------
-# ROUTE POUR LES ARDUINOS
+# ROUTE POUR LES ARDUINOS (connexion principale)
 # -----------------------------
 @app.route("/arduino", methods=["POST"])
 def arduino_connect():
     data = request.get_json()
     if not data or data.get("key") != SECURITY_KEY:
         return jsonify({"status": "error", "message": "Invalid key"}), 403
-
     name = data.get("name", "unknown")
     now = datetime.utcnow()
-
-    # Met à jour ou ajoute l’Arduino
-    arduinos[name] = {
-        "last_seen": now,
-        "connected": True,
-        "action": arduinos.get(name, {}).get("action", "")
-    }
-
-    # Récupère et vide l’action en attente
-    action = arduinos[name]["action"]
-    arduinos[name]["action"] = ""
-
+    # Assure l'existence de l'entrée et de la file d'actions
+    if name not in arduinos:
+        arduinos[name] = {
+            "last_seen": now,
+            "connected": True,
+            "actions": []  # FIFO
+        }
+    else:
+        # met à jour timestamp / connexion sans écraser la file d'actions
+        arduinos[name].setdefault("actions", [])
+        arduinos[name]["last_seen"] = now
+        arduinos[name]["connected"] = True
+    # Récupère la première action en FIFO (si présente) et la retire de la file
+    action_to_send = ""
+    if isinstance(arduinos[name].get("actions"), list) and len(arduinos[name]["actions"]) > 0:
+        action_to_send = arduinos[name]["actions"].pop(0)
+    # Log pour debug
+    print(f"Arduino {name} connecté à {now}. Action envoyée: {action_to_send or 'aucune'}")
+    print(f"Actions restantes: {arduinos[name].get('actions', [])}")
     return jsonify({
         "status": "ok",
         "message": f"{name}, connexion OK.",
-        "action": action
+        "action": action_to_send
     })
+
+
 
 # -----------------------------
 # PAGE DE CONNEXION / LOGIN
@@ -345,9 +386,8 @@ def home():
     """
     return render_template_string(html, actions=arduinos_actions, arduinos=arduinos)
 
-
 # -----------------------------
-# PAGE SPECIFIQUE POUR UN ARDUINO /HOME_ARDUINO_CONFIG
+# PAGE /HOME_ARDUINO_CONFIG
 # -----------------------------
 @app.route("/home_arduino_config")
 def home_arduino_config():
@@ -372,8 +412,12 @@ def home_arduino_config():
             h2 { color: #0078D7; }
             a.link-config { text-decoration: none; color: #0078D7; font-weight: bold; }
             a.link-config:hover { text-decoration: underline; }
+            input[type=range] { width: 100px; }
+            button { padding: 4px 8px; margin: 2px; }
         </style>
+
         <script>
+
             async function refreshArduinoData() {
                 try {
                     const response = await fetch('/arduino_config_status');
@@ -382,78 +426,135 @@ def home_arduino_config():
                     const arduino = data.arduinos_info[arduinoName];
                     if (!arduino) return;
 
-                    // --- Infos synthétiques ---
-                    const fields = (arduino.infos_str || "").split(';');
-                    const ippub = (fields[5] || '').split(',');
-                    const infoTableBody = document.getElementById('info-table-body');
-                    infoTableBody.innerHTML = `
-                        <tr><td>Nom de l'Arduino</td><td>${fields[0] || ''}</td></tr>
-                        <tr><td>Type</td><td>${fields[1] || ''}</td></tr>
-                        <tr><td>Adresse IP locale</td><td>${fields[2] || ''}</td></tr>
-                        <tr><td>Mac Address</td><td>${fields[3] || ''}</td></tr>
-                        <tr><td>URL du serveur</td><td>http://${fields[4] || ''}</td></tr>
-                        <tr><td>Adresse IP publique</td><td>${ippub[0] || fields[5] || ''}</td></tr>
-                    `;
-
-                    // --- Tableau des broches ---
                     const pinConfig = Array.isArray(arduino.pin_config) ? arduino.pin_config : [];
                     const pinValue  = Array.isArray(arduino.pin_value)  ? arduino.pin_value  : [];
 
                     const pinNames = [];
-                    for (let i = 0; i < 14; i++) pinNames.push("D"+i);
-                    for (let i = 0; i < 6;  i++) pinNames.push("A"+i);
-
+                    for (let i = 0; i < 14; i++) pinNames.push("D" + i);
+                    for (let i = 0; i < 6;  i++) pinNames.push("A" + i);
                     const pwmPins = ["D3","D5","D6","D9","D10","D11"];
+
                     const tableBody = document.getElementById('pins-table-body');
                     tableBody.innerHTML = '';
 
                     const maxLen = Math.max(pinNames.length, pinConfig.length, pinValue.length);
 
                     for (let i = 0; i < maxLen; i++) {
-                        const name = (i < pinNames.length) ? pinNames[i] :
-                                     (i < 14 ? "D"+i : "A"+(i-14));
-
-                        const pc = (i < pinConfig.length) ? Number(pinConfig[i]) : 0;
-                        const rawVal = (i < pinValue.length) ? pinValue[i] : null;
-                        const valNum = (rawVal === null || rawVal === "") ? null : Number(rawVal);
+                        const name = pinNames[i] ?? ("A" + (i - 14));
+                        const pc = Number(pinConfig[i] ?? 0);
+                        const rawVal = pinValue[i];
+                        const valNum = (rawVal === null || rawVal === "" || rawVal === undefined) ? 0 : Number(rawVal);
 
                         const bit1 = (pc >> 1) & 1;
-                        const bit3 = (pc >> 3) & 1; // réservé
+                        const bit3 = (pc >> 3) & 1; // reserved
                         const bit4 = (pc >> 4) & 1;
 
-                        const isDigitalName = i < 14;
-                        const col_type = isDigitalName ? "DIGITALE" : "ANALOGIQUE";
-                        const col_pwm_possible = pwmPins.includes(name) ? "PWM" : "";
-                        const col_used_as = bit1 ? "DIGITALE" : "ANALOGIQUE";
-                        const col_used = bit3 ? "Réservée" : "Active";
-                        const col_dir = bit4 ? "SORTIE" : "ENTRÉE";
+                        const reserved = (bit3 === 1);
 
-                        const col_ana_val = (valNum !== null && !isNaN(valNum)) ? String(valNum) : "";
-                        let col_dig_val = "";
-                        if (valNum !== null && !isNaN(valNum)) {
-                            if (valNum === 0) col_dig_val = "LOW";
-                            else if (valNum === 1024) col_dig_val = "HIGH";
+                        const isDigitalPinName = (i < 14);
+                        const pinType = isDigitalPinName ? "DIGITALE" : "ANALOGIQUE";
+                        const canPWM = pwmPins.includes(name) ? "PWM" : "";
+
+                        const usedAs = bit1 ? "DIGITALE" : "ANALOGIQUE";
+                        const used = reserved ? "" : "Active";
+                        const direction = reserved ? "" : (bit4 ? "SORTIE" : "ENTRÉE");
+
+                        let digVal = "";
+                        let anaVal = "";
+
+                        if (!reserved && !isNaN(valNum)) {
+                            if (valNum === 0) digVal = "LOW";
+                            else if (valNum === 255) digVal = "HIGH";
+                            anaVal = valNum;
                         }
 
-                        const reserved = (bit3 === 1);
+                        // ================================
+                        // CHOIX DU COMPOSANT DE CONTROLE
+                        // ================================
+                        let controlHTML = "";
+
+                        if (!reserved && bit4 === 1) {
+                            if (bit1 === 1) {
+                                // -------- DIGITAL OUTPUT --------
+                                const label = (valNum === 0) ? "HIGH" : "LOW";
+                                const newValue = (valNum === 0) ? 255 : 0;
+
+                                controlHTML = `
+                                    <button onclick="sendPinValue(${i}, ${newValue})">
+                                        ${label}
+                                    </button>`;
+                            }
+                            else {
+                                // -------- ANALOG OUTPUT --------
+                                controlHTML = `
+                                    <input type="range" min="0" max="255" value="${valNum}"
+                                        id="slider-${i}"
+                                        onchange="sendSlider(${i})">`;
+                            }
+                        }
+
+                        const controlCellClass = reserved ? "gray-cell" : "";
 
                         const rowHTML = `
                             <tr>
                                 <td>${i}</td>
                                 <td>${name}</td>
-                                <td>${col_type}</td>
-                                <td>${col_pwm_possible}</td>
-                                <td>${col_used_as}</td>
-                                <td>${col_used}</td>
-                                <td class="${reserved ? 'gray-cell' : ''}">${reserved ? '' : col_dir}</td>
-                                <td class="${reserved ? 'gray-cell' : ''}">${reserved ? '' : col_dig_val}</td>
-                                <td class="${reserved ? 'gray-cell' : ''}">${reserved ? '' : col_ana_val}</td>
+                                <td>${pinType}</td>
+                                <td>${canPWM}</td>
+                                <td>${usedAs}</td>
+                                <td class="${reserved ? 'gray-cell' : ''}">${used}</td>
+                                <td class="${reserved ? 'gray-cell' : ''}">${direction}</td>
+                                <td class="${reserved ? 'gray-cell' : ''}">${digVal}</td>
+                                <td class="${reserved ? 'gray-cell' : ''}">${anaVal}</td>
+                                <td class="${controlCellClass}">${controlHTML}</td>
                             </tr>
                         `;
+
                         tableBody.innerHTML += rowHTML;
                     }
+
                 } catch (err) {
                     console.error("Erreur AJAX:", err);
+                }
+            }
+
+            async function sendPinValue(pin, value) {
+                const arduinoName = {{ arduino_name|tojson }};
+                try {
+                    await fetch('/update_pin_value', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            key: "{{ SECURITY_KEY }}",
+                            name: arduinoName,
+                            pin: pin,
+                            value: Number(value)
+                        })
+                    });
+                } catch (err) {
+                    console.error("Erreur digital:", err);
+                }
+            }
+
+            async function sendSlider(pin) {
+                const slider = document.getElementById("slider-" + pin);
+                if (!slider) return;
+                const value = Number(slider.value);
+                const arduinoName = {{ arduino_name|tojson }};
+
+                try {
+                    await fetch('/update_pin_value', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            key: "{{ SECURITY_KEY }}",
+                            name: arduinoName,
+                            pin: pin,
+                            value: value
+                        })
+                    });
+                } catch (err) {
+                    console.error("Erreur slider:", err);
                 }
             }
 
@@ -461,18 +562,16 @@ def home_arduino_config():
             window.onload = refreshArduinoData;
         </script>
     </head>
+
     <body>
         <h2>🔧 Informations synthétiques de {{ arduino_name }}</h2>
-        <table>
-            <thead><tr><th>Nom du champ</th><th>Valeur</th></tr></thead>
-            <tbody id="info-table-body"></tbody>
-        </table>
 
         <h2>📊 Configuration détaillée des broches</h2>
+
         <table>
             <thead>
                 <tr>
-                    <th>No broche</th>
+                    <th>No</th>
                     <th>Nom</th>
                     <th>Type</th>
                     <th>PWM possible</th>
@@ -481,25 +580,67 @@ def home_arduino_config():
                     <th>Entrée / Sortie</th>
                     <th>Valeur digitale</th>
                     <th>Valeur analogique</th>
+                    <th>Contrôle</th>
                 </tr>
             </thead>
             <tbody id="pins-table-body"></tbody>
         </table>
 
-        <p><i>ℹ️ Les sorties analogiques sont simulées par PWM sur D3, D5, D6, D9, D10, D11.</i></p>
-
-        <a class="link-config" href="/home">➡️ Retour vers la page d'accueil</a>
-        <br><br>
-        <div class="logout">
-            <form action="/logout" method="POST">
-                <input type="submit" value="🚪 Se déconnecter">
-            </form>
-        </div>
+        <a class="link-config" href="/home">➡️ Retour</a>
     </body>
+
     </html>
     """
-    return render_template_string(html, arduino_name=arduino_name)
 
+    return render_template_string(html, arduino_name=arduino_name, SECURITY_KEY=SECURITY_KEY)
+
+# -----------------------------
+# ROUTE/UPDATE_PIN_VALUE
+# -----------------------------
+@app.route("/update_pin_value", methods=["POST"])
+def update_pin_value():
+    if not session.get("logged_in"):
+        return jsonify({"status": "error", "message": "non autorisé"}), 403
+    data = request.get_json()
+    if not data:
+        return jsonify({"status": "error", "message": "Pas de données reçues"}), 400
+    # Vérification clé de sécurité
+    if data.get("key") != SECURITY_KEY:
+        return jsonify({"status": "error", "message": "Clé invalide"}), 403
+    name = data.get("name")
+    pin = data.get("pin")
+    value = data.get("value")
+    if name not in arduinos_config:
+        return jsonify({"status": "error", "message": f"Arduino '{name}' inconnu"}), 404
+    try:
+        pin = int(pin)
+        value = int(value)
+    except Exception:
+        return jsonify({"status": "error", "message": "Pin ou valeur invalide"}), 400
+    # Clamp valeur 0..255
+    if value < 0:
+        value = 0
+    if value > 255:
+        value = 255
+    # Mettre à jour la valeur côté serveur (assure existencia du tableau)
+    if arduinos_config[name].get("pin_value") is None or not isinstance(arduinos_config[name]["pin_value"], list):
+        arduinos_config[name]["pin_value"] = [0] * 20
+    if 0 <= pin < len(arduinos_config[name]["pin_value"]):
+        arduinos_config[name]["pin_value"][pin] = value
+    else:
+        return jsonify({"status": "error", "message": "Numéro de broche hors limite"}), 400
+    # Préparer l'action pour l'Arduino (en FIFO)
+    action_cmd = f"/set_arduino_pin_value?pin={pin}&value={value}"
+    # Assure l'existence de la structure d'actions côté runtime (arduinos)
+    if name not in arduinos:
+        arduinos[name] = {"last_seen": datetime.utcnow(), "connected": False, "actions": []}
+    if "actions" not in arduinos[name] or not isinstance(arduinos[name]["actions"], list):
+        arduinos[name]["actions"] = []
+    # Ajoute en fin de file (FIFO)
+    arduinos[name]["actions"].append(action_cmd)
+    print(f"Action ajoutée à la file pour {name}: {action_cmd}")
+    print(f"File maintenant: {arduinos[name]['actions']}")
+    return jsonify({"status": "ok", "message": f"Valeur broche {pin} mise à jour", "action_queued": action_cmd})
 
 
 # -----------------------------
@@ -519,7 +660,7 @@ def status():
             name: {
                 "last_seen": info["last_seen"].strftime("%H:%M:%S"),
                 "connected": info["connected"],
-                "action": info["action"]
+                "action": info["actions"]
             }
             for name, info in arduinos.items()
         }
@@ -557,13 +698,27 @@ def arduino_config_status():
 
 
 # -----------------------------
-# ACTION MANUELLE
+# ROUTE POUR ENVOYER UNE ACTION MANUELLE
 # -----------------------------
 @app.route("/set_action/<name>", methods=["POST"])
 def set_action(name):
     if not session.get("logged_in"):
         return redirect(url_for("login"))
-    action = request.form.get("action", "")
-    if name in arduinos:
-        arduinos[name]["action"] = action
-    return redirect(url_for("home"))
+    if name not in arduinos:
+        return f"Arduino '{name}' inconnu.", 404
+    action = request.form.get("action", "").strip()
+    # Si aucune action choisie → on ne fait rien
+    if not action:
+        return redirect("/home")
+    # Initialiser la file d’attente si absente
+    if name not in arduinos:
+        arduinos[name] = {"actions": []}
+    if "actions" not in arduinos[name]:
+        arduinos[name]["actions"] = []
+    # Ajouter l'action dans la file FIFO
+    arduinos[name]["actions"].append(action)
+
+    print(f"[ACTION MANUELLE] Ajout pour {name} : {action}")
+    return redirect("/home")
+
+
