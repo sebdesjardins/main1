@@ -65,6 +65,15 @@ def update_app_meteo():
     with open("meteo.json", "w") as f:
         json.dump(APP_MODEL["meteo"], f)
 
+@app.route("/update_meteo")
+def update_meteo_route():
+    global APP_MODEL
+    if not session.get("logged_in"):
+        return redirect(url_for("login"))
+    print(">>> Mise à jour météo déclenchée manuellement depuis l'interface web")
+    update_app_meteo()  # <-- la fonction qui met à jour APP_MODEL
+    return redirect("/meteo")  # revient sur la page météo
+
 
 def meteo_background_task():
     while True:
@@ -1160,7 +1169,9 @@ def meteo_page():
 
     html += """
         </table>
-
+        <form action="/update_meteo" method="get">
+            <button type="submit" class="btn">🔄 Rafraîchir la météo</button>
+        </form>
         <a href="/home" class="btn">Retour</a>
 
         </body>
