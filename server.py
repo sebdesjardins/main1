@@ -983,29 +983,40 @@ def arduino_vars_status():
 
     return jsonify(output)
 
-
 @app.route("/meteo")
 def meteo_page():
     global APP_MODEL
     if not session.get("logged_in"):
         return redirect(url_for("login"))
 
-    # --- NOUVEAU : lecture du fichier météo ---
-    try:
-        with open("meteo.json") as f:
-            meteo_data = json.load(f)
-    except FileNotFoundError:
-        meteo_data = {"i": {"city_number": 0}, "s": {}}
-
     city_number = APP_MODEL["meteo"]["i"].get("city_number", 0)
 
-    # Récupération des données
+    # Table correspondance météo → icône
+    ICONS = {
+        "SOLEIL": "☀️",
+        "NUAGEUX": "☁️",
+        "BROUILLARD": "🌫️",
+        "PLUIE": "🌧️",
+        "NEIGE": "❄️",
+    }
+
+    # --- Récupérer données brutes ---
     cities = []
     for idx in range(1, city_number + 1):
         name = APP_MODEL["meteo"]["s"].get(f"city_name_{idx}", "")
-        meteo = APP_MODEL["meteo"]["s"].get(f"city_meteo_{idx}", "")
-        cities.append((idx, name, meteo))
+        meteo_str = APP_MODEL["meteo"]["s"].get(f"city_meteo_{idx}", "")
+        cities.append((idx, name, meteo_str))
 
+    # --- Extraire heures depuis la première ville ---
+    hours = []
+    if cities:
+        parts = cities[0][2].split("  ")
+        for p in parts:
+            if ":" in p:
+                h = p.split(":")[0]  # ex "12h"
+                hours.append(h)
+
+    # --- HTML ---
     html = """
     <html>
         <head>
@@ -1017,9 +1028,7 @@ def meteo_page():
                     background-color: #f0f4f8;
                     margin: 20px;
                 }
-                h2 {
-                    color: #003366;
-                }
+                h2 { color: #003366; }
                 table {
                     width: 100%;
                     border-collapse: collapse;
@@ -1032,11 +1041,14 @@ def meteo_page():
                     padding: 10px;
                     border: 2px solid #1f618d;
                     font-size: 16px;
+                    text-align: center;
                 }
                 td {
                     border: 2px solid #1f618d;
                     padding: 10px;
                     font-size: 15px;
+                    text-align: center;
+                    vertical-align: middle;
                 }
                 tr:nth-child(even) {
                     background-color: #f2faff;
@@ -1050,9 +1062,7 @@ def meteo_page():
                     border-radius: 5px;
                     margin-top: 20px;
                 }
-                .btn:hover {
-                    background-color: #1f618d;
-                }
+                .btn:hover { background-color: #1f618d; }
             </style>
         </head>
         <body>
@@ -1061,20 +1071,38 @@ def meteo_page():
 
         <table>
             <tr>
-                <th style="width: 80px;">#</th>
-                <th>Ville</th>
-                <th>Météo</th>
-            </tr>
+                <th style="width: 50px;">#</th>
+                <th style="width: 150px;">Ville</th>
     """
 
-    for idx, name, meteo in cities:
-        html += f"""
-            <tr>
-                <td>{idx}</td>
-                <td>{name}</td>
-                <td style="white-space: pre-wrap;">{meteo}</td>
-            </tr>
-        """
+    # --- Entêtes : heures ---
+    for h in hours:
+        html += f"<th>{h}</th>"
+
+    html += "</tr>"
+
+    # --- Lignes des villes ---
+    for idx, name, meteo_str in cities:
+        html += f"<tr><td>{idx}</td><td>{name}</td>"
+
+        entries = meteo_str.split("  ")
+
+        for e in entries:
+            if ":" not in e:
+                html += "<td></td>"
+                continue
+
+            # e = "12h:2° NUAGEUX"
+            hour, data = e.split(":", 1)
+
+            temp = data.strip().split(" ")[0]      # "2°"
+            weather = data.strip().split(" ")[1]   # "NUAGEUX"
+
+            icon = ICONS.get(weather.upper(), "")
+
+            html += f"<td>{temp}<br>{icon}</td>"
+
+        html += "</tr>"
 
     html += """
         </table>
@@ -1086,8 +1114,6 @@ def meteo_page():
     """
 
     return html
-
-
 
 
 # Lancer le thread au démarrage du serveur
