@@ -62,8 +62,16 @@ def update_app_meteo():
         # Injection résultats dans le APP_MODEL
         APP_MODEL["meteo"]["s"][f"city_name_{i}"]  = cities[i-1]["name"]
         APP_MODEL["meteo"]["s"][f"city_meteo_{i}"] = cities[i-1]["meteo"]
-    with open("meteo.json", "w") as f:
-        json.dump(APP_MODEL["meteo"], f)
+
+    path = "./meteo.json"
+    if not os.path.exists(path):
+        print(">>> Création du fichier meteo.json")
+        with open(path, "w") as f:
+            json.dump({}, f)
+        return {}
+    with open(path, "r") as f:
+        return json.load(f)
+
 
 @app.route("/update_meteo")
 def update_meteo_route():
@@ -1183,4 +1191,5 @@ def meteo_page():
 
 
 # Lancer le thread au démarrage du serveur
+update_app_meteo()
 threading.Thread(target=meteo_background_task, daemon=True).start()
