@@ -4,6 +4,12 @@ from app_meteo import *
 import time
 import threading
 import json
+import os
+
+PERSIST_FILE = "/var/data/meteo.json"
+
+if not os.path.isdir("/var/data"):
+    PERSIST_FILE = "./meteo.json"
 
 app = Flask(__name__)
 app.secret_key = "SUPER_SECRET_KEY_CHANGE_ME"  # 🔑 Change cette clé
@@ -983,40 +989,83 @@ def arduino_vars_status():
 
     return jsonify(output)
 
+
+
+
+
+
+
+def update_app_meteo():
+    global APP_MODEL
+    from app_meteo import cities, update_city_meteo
+
+    city_number = APP_MODEL["meteo"]["i"]["city_number"]
+
+    for i in range(1, city_number + 1):
+        # Mise à jour météo de la ville i
+        update_city_meteo(cities[i - 1])
+
+        # Injection résultats dans le APP_MODEL
+        APP_MODEL["meteo"]["s"][f"city_name_{i}"]  = cities[i - 1]["name"]
+        APP_MODEL["meteo"]["s"][f"city_meteo_{i}"] = cities[i - 1]["meteo"]
+
+    # --- Sauvegarde persistante ---
+    os.makedirs("/var/data", exist_ok=True)
+    with open(PERSIST_FILE, "w") as f:
+        json.dump(APP_MODEL["meteo"], f)
+
+
 @app.route("/meteo")
 def meteo_page():
+    import json, os
     global APP_MODEL
+
     if not session.get("logged_in"):
         return redirect(url_for("login"))
 
+    PERSIST_FILE = "/var/data/meteo.json"
+
+    # --- Recharge les données depuis disque si existantes ---
+    if os.path.exists(PERSIST_FILE):
+        with open(PERSIST_FILE) as f:
+            APP_MODEL["meteo"] = json.load(f)
+
     city_number = APP_MODEL["meteo"]["i"].get("city_number", 0)
 
-    # Table correspondance météo → icône
-    ICONS = {
+    # --- Construire la liste des villes ---
+    cities = []
+    for idx in range(1, city_number + 1):
+        name = APP_MODEL["meteo"]["s"].get(f"city_name_{idx}", "")
+        meteo = APP_MODEL["meteo"]["s"].get(f"city_meteo_{idx}", "")
+        cities.append((idx, name, meteo))
+
+    # Icônes météo
+    icons = {
         "SOLEIL": "☀️",
         "NUAGEUX": "☁️",
         "BROUILLARD": "🌫️",
         "PLUIE": "🌧️",
-        "NEIGE": "❄️",
+        "NEIGE": "❄️"
     }
 
-    # --- Récupérer données brutes ---
-    cities = []
-    for idx in range(1, city_number + 1):
-        name = APP_MODEL["meteo"]["s"].get(f"city_name_{idx}", "")
-        meteo_str = APP_MODEL["meteo"]["s"].get(f"city_meteo_{idx}", "")
-        cities.append((idx, name, meteo_str))
-
-    # --- Extraire heures depuis la première ville ---
-    hours = []
-    if cities:
-        parts = cities[0][2].split("  ")
+    # --- Extraire les horaires disponibles ---
+    def extract_hours(meteo_string):
+        parts = meteo_string.split()
+        hours = []
         for p in parts:
-            if ":" in p:
-                h = p.split(":")[0]  # ex "12h"
+            if p.endswith("h:") or p.endswith("h:0°") or "h:" in p:
+                h = p.split(":")[0]
                 hours.append(h)
+        return hours
 
-    # --- HTML ---
+    # On prend l'entête de la 1ère ville
+    hour_labels = []
+    if cities and cities[0][2]:
+        raw = cities[0][2]
+        segments = raw.split("  ")
+        hour_labels = [seg.split(":")[0] for seg in segments]
+
+    # HTML //////////////////////////////////////////////////////////////////////
     html = """
     <html>
         <head>
@@ -1075,32 +1124,37 @@ def meteo_page():
                 <th style="width: 150px;">Ville</th>
     """
 
-    # --- Entêtes : heures ---
-    for h in hours:
+    # Ajouter les entêtes horaires
+    for h in hour_labels:
         html += f"<th>{h}</th>"
 
     html += "</tr>"
 
-    # --- Lignes des villes ---
-    for idx, name, meteo_str in cities:
+    # Ajouter lignes météo
+    for idx, name, meteo in cities:
+
+        # Séparation brute : "12h:3° SOLEIL"
+        entries = [seg.strip() for seg in meteo.split("  ") if seg.strip()]
+
+        # Extraire (température, icône)
+        meteo_cells = []
+        for entry in entries:
+            try:
+                hour, rest = entry.split(":", 1)
+                temp, weather_type = rest.split(" ", 1)
+                weather_type = weather_type.strip()
+            except:
+                temp = "?"
+                weather_type = ""
+
+            icon = icons.get(weather_type, "❓")
+            meteo_cells.append(f"{temp}<br>{icon}")
+
+        # Construire la ligne
         html += f"<tr><td>{idx}</td><td>{name}</td>"
 
-        entries = meteo_str.split("  ")
-
-        for e in entries:
-            if ":" not in e:
-                html += "<td></td>"
-                continue
-
-            # e = "12h:2° NUAGEUX"
-            hour, data = e.split(":", 1)
-
-            temp = data.strip().split(" ")[0]      # "2°"
-            weather = data.strip().split(" ")[1]   # "NUAGEUX"
-
-            icon = ICONS.get(weather.upper(), "")
-
-            html += f"<td>{temp}<br>{icon}</td>"
+        for cell in meteo_cells:
+            html += f"<td>{cell}</td>"
 
         html += "</tr>"
 
@@ -1114,6 +1168,7 @@ def meteo_page():
     """
 
     return html
+
 
 
 # Lancer le thread au démarrage du serveur
