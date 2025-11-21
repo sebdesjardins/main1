@@ -6,10 +6,10 @@ import threading
 import json
 import os
 
-PERSIST_FILE = "/var/data/meteo.json"
-
-if not os.path.isdir("/var/data"):
-    PERSIST_FILE = "./meteo.json"
+#PERSIST_FILE = "/var/data/meteo.json"
+#if not os.path.isdir("/var/data"):
+#    PERSIST_FILE = "./meteo.json"
+PERSIST_FILE = "./meteo.json"
 
 app = Flask(__name__)
 app.secret_key = "SUPER_SECRET_KEY_CHANGE_ME"  # 🔑 Change cette clé
