@@ -1,5 +1,9 @@
 from flask import Flask, request, jsonify, render_template_string, redirect, url_for, session
 from datetime import datetime
+from app_meteo import *
+import threading
+import time
+import threading
 
 app = Flask(__name__)
 app.secret_key = "SUPER_SECRET_KEY_CHANGE_ME"  # 🔑 Change cette clé
@@ -12,6 +16,59 @@ ADMIN_PASSWORD = "admin123"
 arduinos = {}  # { name: { 'last_seen': datetime, 'action': str, 'connected': bool } }
 # Dictionnaire global pour stocker toutes les configs Arduino
 arduinos_config = {}  # { "ARDUINO_EB20": { "name":..., "config_str":..., "pin_config": [...], "pin_value": [...] } }
+# Modèle global indépendant de toute carte
+APP_MODEL = {
+    "arrosage": {
+        "b": {
+            "forcage_pompe1_active": 0,
+            "forcage_pompe2_active": 0,
+            "forcage_pompe3_active": 0,
+            "forcage_pompe4_active": 0,
+            "mode_automatique": 0
+        }
+    },
+    "meteo": {
+        "i": {
+            "city_number" : 5
+        },
+        "s": {
+            "city_name_1": "",
+            "city_meteo_1": "",
+            "city_name_2": "",
+            "city_meteo_2": "",
+            "city_name_3": "",
+            "city_meteo_3": "",
+            "city_name_4": "",
+            "city_meteo_4": "",
+            "city_name_5": "",
+            "city_meteo_5": "",
+        }
+    }
+}
+
+def update_app_meteo():
+    global APP_MODEL
+    from app_meteo import cities, update_city_meteo
+    city_number = APP_MODEL["meteo"]["i"]["city_number"]
+    for i in range(1, city_number + 1):
+        # Mise à jour météo de la ville i
+        update_city_meteo(cities[i-1])
+        # Injection résultats dans le APP_MODEL
+        APP_MODEL["meteo"]["s"][f"city_name_{i}"]  = cities[i-1]["name"]
+        APP_MODEL["meteo"]["s"][f"city_meteo_{i}"] = cities[i-1]["meteo"]
+
+
+
+def meteo_background_task():
+    while True:
+        try:
+            print("[METEO] Mise à jour automatique...")
+            update_app_meteo()
+        except Exception as e:
+            print("Erreur update_app_meteo:", e)
+        time.sleep(300)  # 300 sec = 5 minutes
+
+
 
 # -----------------------------
 # ROUTE POUR ENVOYER UNE VARIABLE DE L'ARDUINOS
@@ -47,6 +104,13 @@ def arduino_vars():
 
     return "OK"
 
+import copy
+
+def init_srv_variables_for_arduino(name):
+    if "variables_srv" not in arduinos[name] or not arduinos[name]["variables_srv"]:
+        arduinos[name]["variables_srv"] = copy.deepcopy(APP_MODEL)
+        print(f"[INIT] Variables serveur initialisées pour {name}")
+
 
 # -----------------------------
 # ROUTE POUR LES ARDUINOS (connexion principale)
@@ -59,17 +123,27 @@ def arduino_connect():
     name = data.get("name", "unknown")
     now = datetime.utcnow()
     # Assure l'existence de l'entrée et de la file d'actions
+    # Première connexion ?
     if name not in arduinos:
         arduinos[name] = {
-            "last_seen": now,
             "connected": True,
-            "actions": []  # FIFO
+            "last_seen": datetime.now(),
+            "vars": {},
+            "variables_srv": {},
+            "action":{},
+
+            "srv_queue": []
         }
+        init_srv_variables_for_arduino(name)
+        print(f"[INFO] Arduino {name} ajouté avec modèle variables_srv.")
     else:
         # met à jour timestamp / connexion sans écraser la file d'actions
         arduinos[name].setdefault("actions", [])
         arduinos[name]["last_seen"] = now
         arduinos[name]["connected"] = True
+        # En cas de reset de l’arduino, s’assurer du modèle
+        if "variables_srv" not in arduinos[name] or not arduinos[name]["variables_srv"]:
+            init_srv_variables_for_arduino(name)
     # Récupère la première action en FIFO (si présente) et la retire de la file
     action_to_send = ""
     if isinstance(arduinos[name].get("actions"), list) and len(arduinos[name]["actions"]) > 0:
@@ -244,6 +318,9 @@ def home():
     # Tableau des actions possibles
     arduinos_actions = ["reboot", "bonjour"]
 
+    # Liste des applications disponibles d'après APP_MODEL
+    app_names = list(APP_MODEL.keys())
+
     html = """
     <html>
     <head>
@@ -258,7 +335,7 @@ def home():
             .off { color: red; font-weight: bold; }
             .logout { margin-top: 15px; }
             button { padding: 8px 16px; margin-top: 10px; cursor: pointer; border: none; background: #0078D7; color: white; border-radius: 5px; }
-            button:hover { background: #005fa3; }
+            button:hover { background-color: #005fa3; }
             .link-config { margin-top: 5px; display: block; }
         </style>
 
@@ -331,6 +408,27 @@ def home():
         </script>
     </head>
     <body>
+
+        <!-- Nouvelle section : Applications disponibles -->
+        <h2>📱 Applications disponibles</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>Nom de l'application</th>
+                    <th>Accès</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for app in app_names %}
+                <tr>
+                    <td>{{ app }}</td>
+                    <td><a href="/{{ app }}">➡️ Aller à {{ app }}</a></td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+
+        <!-- Section existante : Arduinos connus -->
         <h2>🛰️ Arduinos connus </h2>
         <p>Dernière actualisation : <span id="last-update">--:--:--</span></p>
         <table>
@@ -384,7 +482,7 @@ def home():
     </body>
     </html>
     """
-    return render_template_string(html, actions=arduinos_actions, arduinos=arduinos)
+    return render_template_string(html, actions=arduinos_actions, arduinos=arduinos, app_names=app_names)
 
 # -----------------------------
 # PAGE /HOME_ARDUINO_CONFIG
@@ -722,3 +820,267 @@ def set_action(name):
     return redirect("/home")
 
 
+
+# -----------------------------
+# PAGE WEB POUR VARIABLES SRV
+# -----------------------------
+@app.route("/arduino_variables")
+def arduino_variables():
+    if not session.get("logged_in"):
+        return redirect(url_for("login"))
+
+    arduino_name = request.args.get("arduino_name")
+    if not arduino_name or arduino_name not in arduinos:
+        return f"Erreur : Arduino '{arduino_name}' inconnu", 404
+
+    return render_template_string("""
+    <html>
+    <head>
+        <title>Variables - {{arduino_name}}</title>
+        <style>
+            body { font-family: Arial; background:#f7f7f7; margin:20px; }
+            table { border-collapse: collapse; width: 80%; background:white;
+                    box-shadow:0 0 10px rgba(0,0,0,0.1); }
+            th, td { padding:8px; border:1px solid #ddd; text-align:center; }
+            th { background:#0078D7; color:white; }
+            tr:nth-child(even){ background:#f2f2f2; }
+            .led-on  { width:16px; height:16px; background:#00cc00; border-radius:50%; margin:auto; }
+            .led-off { width:16px; height:16px; background:#cc0000; border-radius:50%; margin:auto; }
+            button { padding:6px 10px; margin:2px; cursor:pointer; }
+        </style>
+
+        <script>
+            async function refreshData() {
+                try {
+                    const res = await fetch('/arduino_vars_status');
+                    const data = await res.json();
+
+                    const name = {{ arduino_name|tojson }};
+                    const arduino = data[name];
+                    if (!arduino) {
+                        document.getElementById('vars-body').innerHTML = '<tr><td colspan="4">Aucune donnée</td></tr>';
+                        return;
+                    }
+
+                    const table = document.getElementById("vars-body");
+                    table.innerHTML = "";
+
+                    const applications = arduino.variables_srv || {};
+
+                    for (const appName in applications) {
+                        const vars = applications[appName];
+                        for (const fullName in vars) {
+                            const rawVal = vars[fullName];
+                            const v = Number(rawVal) || 0;
+
+                            // shortName = remove "app.type." prefix -> keep everything after the second dot
+                            const parts = fullName.split('.');
+                            const shortName = (parts.length > 2) ? parts.slice(2).join('.') : fullName;
+
+                            const led = v === 1
+                                ? '<div class="led-on" title="ON"></div>'
+                                : '<div class="led-off" title="OFF"></div>';
+
+                            const row = document.createElement('tr');
+
+                            // Application cell
+                            const tdApp = document.createElement('td');
+                            tdApp.textContent = appName;
+                            row.appendChild(tdApp);
+
+                            // Variable name (short)
+                            const tdName = document.createElement('td');
+                            tdName.textContent = shortName;
+                            row.appendChild(tdName);
+
+                            // Etat (led)
+                            const tdLed = document.createElement('td');
+                            tdLed.innerHTML = led;
+                            row.appendChild(tdLed);
+
+                            // Commandes (ON/OFF) - use data attribute to carry full variable name
+                            const tdCmd = document.createElement('td');
+                            const btnOn = document.createElement('button');
+                            btnOn.textContent = 'ON';
+                            btnOn.dataset.name = fullName;
+                            btnOn.onclick = () => setVar(btnOn.dataset.name, 1);
+
+                            const btnOff = document.createElement('button');
+                            btnOff.textContent = 'OFF';
+                            btnOff.dataset.name = fullName;
+                            btnOff.onclick = () => setVar(btnOff.dataset.name, 0);
+
+                            tdCmd.appendChild(btnOn);
+                            tdCmd.appendChild(btnOff);
+                            row.appendChild(tdCmd);
+
+                            table.appendChild(row);
+                        }
+                    }
+                } catch(err) {
+                    console.error("Erreur refreshData:", err);
+                }
+            }
+
+            async function setVar(fullVarName, value) {
+                const arduinoName = {{ arduino_name|tojson }};
+                try {
+                    await fetch("/update_srv_variable", {
+                        method:"POST",
+                        headers:{ "Content-Type":"application/json" },
+                        body: JSON.stringify({
+                            key: "{{SECURITY_KEY}}",
+                            arduino: arduinoName,
+                            variable: fullVarName,
+                            value: value
+                        })
+                    });
+                    // rafraîchir l'affichage rapidement pour retour visuel
+                    setTimeout(refreshData, 300);
+                } catch(err){
+                    console.error("Erreur setVar:", err);
+                }
+            }
+
+            setInterval(refreshData, 2000);
+            window.onload = refreshData;
+        </script>
+    </head>
+
+    <body>
+        <h2>⚙ Variables Serveur : {{arduino_name}}</h2>
+
+        <table>
+            <thead>
+                <tr>
+                    <th>Application</th>
+                    <th>Nom Variable</th>
+                    <th>État</th>
+                    <th>Commande</th>
+                </tr>
+            </thead>
+            <tbody id="vars-body">
+                <tr><td colspan="4">Chargement…</td></tr>
+            </tbody>
+        </table>
+
+        <br>
+        <a href="/home">⬅ Retour</a>
+    </body>
+    </html>
+    """, arduino_name=arduino_name, SECURITY_KEY=SECURITY_KEY)
+
+
+@app.route("/arduino_vars_status")
+def arduino_vars_status():
+    output = {}
+
+    for name, info in arduinos.items():
+        output[name] = {
+            "variables_srv": info.get("variables_srv", {})
+        }
+
+    return jsonify(output)
+
+
+@app.route("/meteo")
+def meteo_page():
+    global APP_MODEL
+
+    city_number = APP_MODEL["meteo"]["i"].get("city_number", 0)
+
+    # Récupération des données
+    cities = []
+    for idx in range(1, city_number + 1):
+        name = APP_MODEL["meteo"]["s"].get(f"city_name_{idx}", "")
+        meteo = APP_MODEL["meteo"]["s"].get(f"city_meteo_{idx}", "")
+        cities.append((idx, name, meteo))
+
+    html = """
+    <html>
+        <head>
+            <meta charset="UTF-8">
+            <title>Météo</title>
+            <style>
+                body {
+                    font-family: Arial, sans-serif;
+                    background-color: #f0f4f8;
+                    margin: 20px;
+                }
+                h2 {
+                    color: #003366;
+                }
+                table {
+                    width: 100%;
+                    border-collapse: collapse;
+                    margin-top: 20px;
+                    background: white;
+                }
+                th {
+                    background-color: #2980b9;
+                    color: white;
+                    padding: 10px;
+                    border: 2px solid #1f618d;
+                    font-size: 16px;
+                }
+                td {
+                    border: 2px solid #1f618d;
+                    padding: 10px;
+                    font-size: 15px;
+                }
+                tr:nth-child(even) {
+                    background-color: #f2faff;
+                }
+                .btn {
+                    display: inline-block;
+                    padding: 10px 16px;
+                    background-color: #2980b9;
+                    color: white;
+                    text-decoration: none;
+                    border-radius: 5px;
+                    margin-top: 20px;
+                }
+                .btn:hover {
+                    background-color: #1f618d;
+                }
+            </style>
+        </head>
+        <body>
+
+        <h2>📡 Application Météo</h2>
+
+        <table>
+            <tr>
+                <th style="width: 80px;">#</th>
+                <th>Ville</th>
+                <th>Météo</th>
+            </tr>
+    """
+
+    for idx, name, meteo in cities:
+        html += f"""
+            <tr>
+                <td>{idx}</td>
+                <td>{name}</td>
+                <td style="white-space: pre-wrap;">{meteo}</td>
+            </tr>
+        """
+
+    html += """
+        </table>
+
+        <a href="/home" class="btn">Retour</a>
+
+        </body>
+    </html>
+    """
+
+    return html
+
+
+
+
+
+
+# Lancer le thread au démarrage du serveur
+threading.Thread(target=meteo_background_task, daemon=True).start()
