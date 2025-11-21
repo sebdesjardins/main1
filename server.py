@@ -3,6 +3,7 @@ from datetime import datetime
 from app_meteo import *
 import time
 import threading
+import json
 
 app = Flask(__name__)
 app.secret_key = "SUPER_SECRET_KEY_CHANGE_ME"  # 🔑 Change cette clé
@@ -55,7 +56,8 @@ def update_app_meteo():
         # Injection résultats dans le APP_MODEL
         APP_MODEL["meteo"]["s"][f"city_name_{i}"]  = cities[i-1]["name"]
         APP_MODEL["meteo"]["s"][f"city_meteo_{i}"] = cities[i-1]["meteo"]
-
+    with open("meteo.json", "w") as f:
+        json.dump(APP_MODEL["meteo"], f)
 
 
 def meteo_background_task():
@@ -985,6 +987,15 @@ def arduino_vars_status():
 @app.route("/meteo")
 def meteo_page():
     global APP_MODEL
+    if not session.get("logged_in"):
+        return redirect(url_for("login"))
+
+    # --- NOUVEAU : lecture du fichier météo ---
+    try:
+        with open("meteo.json") as f:
+            meteo_data = json.load(f)
+    except FileNotFoundError:
+        meteo_data = {"i": {"city_number": 0}, "s": {}}
 
     city_number = APP_MODEL["meteo"]["i"].get("city_number", 0)
 
@@ -1075,8 +1086,6 @@ def meteo_page():
     """
 
     return html
-
-
 
 
 
