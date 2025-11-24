@@ -6,6 +6,7 @@ import threading
 import json
 import os
 import copy
+from pprint import pprint
 
 #PERSIST_FILE = "/var/data/meteo.json"
 #if not os.path.isdir("/var/data"):
@@ -1056,8 +1057,52 @@ def meteo_page():
     """
     return html
 
+@app.route("/arduino_get_app_vars_names", methods=["GET"])
+def arduino_get_app_vars_names():
+    key = request.args.get("key", "")
+    app = request.args.get("app", "")
+
+    if key != SECURITY_KEY:
+        return "Forbidden", 403
+
+    if app not in APP_MODEL:
+        return jsonify({"vars": []})
+
+    names = []
+
+    for section in APP_MODEL[app]:
+        for varname in APP_MODEL[app][section].keys():
+            names.append(varname)
+
+    # On limite à max 10 pour l'Arduino
+    names = names[:10]
+
+    return jsonify({"vars": names})
+
+@app.route("/arduino_get_app_var_value", methods=["GET"])
+def arduino_get_app_var_value():
+    key = request.args.get("key", "")
+    app = request.args.get("app", "")
+    var = request.args.get("var", "")
+
+    if key != SECURITY_KEY:
+        return "Forbidden", 403
+
+    if app not in APP_MODEL:
+        return jsonify({"value": ""})
+
+    # Chercher la variable dans sections i, s, b, etc
+    for section in APP_MODEL[app]:
+        if var in APP_MODEL[app][section]:
+            return jsonify({"value": str(APP_MODEL[app][section][var])})
+
+    return jsonify({"value": ""})
+
 
 
 # Lancer le thread au démarrage du serveur
 update_app_meteo()
 threading.Thread(target=meteo_background_task, daemon=True).start()
+
+#print("APP_MODEL:")
+#pprint(APP_MODEL)
