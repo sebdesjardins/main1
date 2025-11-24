@@ -1043,7 +1043,7 @@ def meteo_page():
 
     #PERSIST_FILE = "/var/data/meteo.json"
     #PERSIST_FILE = "./meteo.json"
-    update_app_meteo()
+    #update_app_meteo()
 
     # --- Recharge les données depuis disque si existantes ---
     if os.path.exists(PERSIST_FILE):
@@ -1194,5 +1194,5 @@ def meteo_page():
 
 
 # Lancer le thread au démarrage du serveur
-#update_app_meteo()
+update_app_meteo()
 threading.Thread(target=meteo_background_task, daemon=True).start()
