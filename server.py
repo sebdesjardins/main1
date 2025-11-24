@@ -1061,13 +1061,18 @@ def meteo_page():
 def arduino_get_app_vars_names():
     key = request.args.get("key", "")
     app_name = request.args.get("app", "")
+    print("Entree dans la fonction : arduino_get_app_vars_names()")
     if key != SECURITY_KEY:
         return "FORBIDDEN", 403
+    print("SECURUTY OK : arduino_get_app_vars_names()")
     if app_name not in APP_MODEL:
         return "", 200   # aucune variable
+    print("app meteo OK ")
     vars_dict = APP_MODEL[app_name]["s"] | APP_MODEL[app_name]["i"] | APP_MODEL[app_name]["b"]
     # On renvoie seulement les noms, séparés par un ";"
     response = ";".join(vars_dict.keys()) + ";"
+    print("Reponse de la fonction:")
+    print(response)
     return response, 200
 
 
