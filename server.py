@@ -1057,46 +1057,32 @@ def meteo_page():
     """
     return html
 
-@app.route("/arduino_get_app_vars_names", methods=["GET"])
+@app.route("/arduino_get_app_vars_names")
 def arduino_get_app_vars_names():
     key = request.args.get("key", "")
-    app = request.args.get("app", "")
-
+    app_name = request.args.get("app", "")
     if key != SECURITY_KEY:
-        return "Forbidden", 403
+        return "FORBIDDEN", 403
+    if app_name not in APP_MODEL:
+        return "", 200   # aucune variable
+    vars_dict = APP_MODEL[app_name]["s"] | APP_MODEL[app_name]["i"] | APP_MODEL[app_name]["b"]
+    # On renvoie seulement les noms, séparés par un ";"
+    response = ";".join(vars_dict.keys()) + ";"
+    return response, 200
 
-    if app not in APP_MODEL:
-        return jsonify({"vars": []})
 
-    names = []
-
-    for section in APP_MODEL[app]:
-        for varname in APP_MODEL[app][section].keys():
-            names.append(varname)
-
-    # On limite à max 10 pour l'Arduino
-    names = names[:10]
-
-    return jsonify({"vars": names})
-
-@app.route("/arduino_get_app_var_value", methods=["GET"])
+@app.route("/arduino_get_app_var_value")
 def arduino_get_app_var_value():
     key = request.args.get("key", "")
-    app = request.args.get("app", "")
-    var = request.args.get("var", "")
-
+    app_name = request.args.get("app", "")
+    var_name = request.args.get("var", "")
     if key != SECURITY_KEY:
-        return "Forbidden", 403
-
-    if app not in APP_MODEL:
-        return jsonify({"value": ""})
-
-    # Chercher la variable dans sections i, s, b, etc
-    for section in APP_MODEL[app]:
-        if var in APP_MODEL[app][section]:
-            return jsonify({"value": str(APP_MODEL[app][section][var])})
-
-    return jsonify({"value": ""})
+        return "FORBIDDEN", 403
+    if app_name not in APP_MODEL:
+        return "", 200
+    all_vars = APP_MODEL[app_name]["s"] | APP_MODEL[app_name]["i"] | APP_MODEL[app_name]["b"]
+    value = all_vars.get(var_name, "")
+    return str(value), 200
 
 
 
