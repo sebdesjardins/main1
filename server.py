@@ -63,9 +63,9 @@ def update_app_meteo():
         APP_MODEL["meteo"]["s"][f"city_name_{i}"]  = cities[i-1]["name"]
         APP_MODEL["meteo"]["s"][f"city_meteo_{i}"] = cities[i-1]["meteo"]
 
-    path = "./meteo.json"
+    path = PERSIST_FILE
     if not os.path.exists(path):
-        print(">>> Création du fichier meteo.json")
+        print(f">>> Création du fichier {PERSIST_FILE}")
         with open(path, "w") as f:
             json.dump({}, f)
         return {}
@@ -76,8 +76,8 @@ def update_app_meteo():
 @app.route("/update_meteo")
 def update_meteo_route():
     global APP_MODEL
-    if not session.get("logged_in"):
-        return redirect(url_for("login"))
+    #if not session.get("logged_in"):
+    #    return redirect(url_for("login"))
     print(">>> Mise à jour météo déclenchée manuellement depuis l'interface web")
     update_app_meteo()  # <-- la fonction qui met à jour APP_MODEL
     return redirect("/meteo")  # revient sur la page météo
@@ -1040,7 +1040,9 @@ def meteo_page():
     if not session.get("logged_in"):
         return redirect(url_for("login"))
 
-    PERSIST_FILE = "/var/data/meteo.json"
+    #PERSIST_FILE = "/var/data/meteo.json"
+    #PERSIST_FILE = "./meteo.json"
+    update_app_meteo()
 
     # --- Recharge les données depuis disque si existantes ---
     if os.path.exists(PERSIST_FILE):
@@ -1061,8 +1063,8 @@ def meteo_page():
         "SOLEIL": "☀️",
         "NUAGEUX": "☁️",
         "BROUILLARD": "🌫️",
-        "PLUIE": "🌧️",
-        "NEIGE": "❄️"
+        "PLUIE": "☔",
+        "NEIGE": "⛄"
     }
 
     # --- Extraire les horaires disponibles ---
@@ -1191,5 +1193,5 @@ def meteo_page():
 
 
 # Lancer le thread au démarrage du serveur
-update_app_meteo()
+#update_app_meteo()
 threading.Thread(target=meteo_background_task, daemon=True).start()
