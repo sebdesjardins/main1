@@ -1027,7 +1027,8 @@ def update_app_meteo():
         APP_MODEL["meteo"]["s"][f"city_meteo_{i}"] = cities[i - 1]["meteo"]
 
     # --- Sauvegarde persistante ---
-    os.makedirs("/var/data", exist_ok=True)
+    #os.makedirs("/var/data", exist_ok=True)
+    os.makedirs("./", exist_ok=True)
     with open(PERSIST_FILE, "w") as f:
         json.dump(APP_MODEL["meteo"], f)
 
