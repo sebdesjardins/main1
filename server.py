@@ -33,7 +33,9 @@ APP_MODEL = {
             "forcage_pompe3_active": 0,
             "forcage_pompe4_active": 0,
             "mode_automatique": 0
-        }
+        },
+        "i": {},
+        "s": {}
     },
     "meteo": {
         "i": {
@@ -50,7 +52,8 @@ APP_MODEL = {
             "city_meteo_4": "",
             "city_name_5": "",
             "city_meteo_5": "",
-        }
+        },
+        "b": {}
     }
 }
 
