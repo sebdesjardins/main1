@@ -61,7 +61,7 @@ def update_app_meteo():
     global APP_MODEL
     from app_meteo import cities, update_city_meteo
     city_number = APP_MODEL["meteo"]["i"]["city_number"]
-    for i in range(1, city_number + 1):
+    for i in range(0, city_number ):
         # Mise à jour météo de la ville i
         update_city_meteo(cities[i-1])
         # Injection résultats dans le APP_MODEL
