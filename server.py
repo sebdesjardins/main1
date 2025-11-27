@@ -39,7 +39,7 @@ APP_MODEL = {
     },
     "meteo": {
         "i": {
-            "city_number" : 5
+            "city_number" : 6
         },
         "s": {
             "city_name_1": "",
@@ -52,6 +52,8 @@ APP_MODEL = {
             "city_meteo_4": "",
             "city_name_5": "",
             "city_meteo_5": "",
+            "city_name_6": "",
+            "city_meteo_6": "",
         },
         "b": {}
     }
