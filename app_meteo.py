@@ -12,7 +12,7 @@ cities = [
 ]
 
 # ---- Créneaux horaires ----
-schedule_hours = [8, 10, 12, 14, 16, 18, 20, 22, 0, 2, 4, 6]
+schedule_hours = [ 10, 12, 14, 16, 18, 20, 22, 0, 2, 4, 6, 8,]
 
 # ---- Décodage des weather codes ----
 def decode_weather(code):
@@ -21,7 +21,7 @@ def decode_weather(code):
     elif code in [1, 2, 3]:
         return "NUAGEUX"
     elif code in [45, 48]:
-        return "BROUILLARD"
+        return "BRUME"
     elif (51 <= code <= 67) or (80 <= code <= 82) or (95 <= code <= 99):
         return "PLUIE"
     elif (71 <= code <= 77) or (85 <= code <= 86):
@@ -96,9 +96,9 @@ def update_city_meteo(city):
 
         if idx is not None:
             forecast += (
-                f"{h:02d}h:{int(temps[idx])}° {decode_weather(codes[idx])}  "
+                f"{h:02d}h:{int(temps[idx])} {decode_weather(codes[idx])}  "
             )
-
+    print(f'update_city_meteo: forecast={forecast}')
     city["meteo"] = forecast.strip()
 
 def display_meteo():
