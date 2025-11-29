@@ -39,7 +39,7 @@ APP_MODEL = {
     },
     "meteo": {
         "i": {
-            "city_number" : 6
+            "city_number" : "6"
         },
         "s": {
             "city_name_1": "",
@@ -54,6 +54,12 @@ APP_MODEL = {
             "city_meteo_5": "",
             "city_name_6": "",
             "city_meteo_6": "",
+            "city_name_7": "",
+            "city_meteo_7": "",
+            "city_name_8": "",
+            "city_meteo_8": "",
+            "city_name_9": "",
+            "city_meteo_9": "",
         },
         "b": {}
     }
@@ -62,31 +68,61 @@ APP_MODEL = {
 def update_app_meteo():
     global APP_MODEL
     from app_meteo import cities, update_city_meteo
-    city_number = APP_MODEL["meteo"]["i"]["city_number"]
+    city_number = int(APP_MODEL["meteo"]["i"]["city_number"])
     for i in range(0, city_number ):
-        # Mise à jour météo de la ville i
-        update_city_meteo(cities[i-1])
+        # Mise à jour météo de la ville itmp_var
         # Injection résultats dans le APP_MODEL
         APP_MODEL["meteo"]["s"][f"city_name_{i}"]  = cities[i-1]["name"]
-        APP_MODEL["meteo"]["s"][f"city_meteo_{i}"] = cities[i-1]["meteo"]
+        tmp_var = cities[i-1]["meteo"].replace("&deg;", "")
+        print(f':update_app_meteo : tmp_var={tmp_var}')
+        APP_MODEL["meteo"]["s"][f"city_meteo_{i}"] = tmp_var
     path = PERSIST_FILE
     if not os.path.exists(path):
+        print(f'Fonction update_app_meteo() : bkp structure vide')
         print(f">>> Création du fichier {PERSIST_FILE}")
-        with open(path, "w") as f:
-            json.dump({}, f)
+        with open(PERSIST_FILE, "w", encoding="utf-8") as f:
+            json.dump(APP_MODEL, f, ensure_ascii=False, indent=2)
         return {}
-    with open(path, "r") as f:
-        return json.load(f)
+    with open(PERSIST_FILE, "r", encoding="utf-8") as f:
+        APP_MODEL = json.load(f)
 
-
+# --- route de mise à jour complète ---
 @app.route("/update_meteo")
-def update_meteo_route():
+def update_meteo():
+    """
+    Met à jour la météo de toutes les villes présentes dans APP_MODEL['meteo'].
+    Utilise load_persist() pour s'assurer qu'on part des données sauvegardées.
+    """
     global APP_MODEL
-    #if not session.get("logged_in"):
-    #    return redirect(url_for("login"))
-    print(">>> Mise à jour météo déclenchée manuellement depuis l'interface web")
-    update_app_meteo()  # <-- la fonction qui met à jour APP_MODEL
-    return redirect("/meteo")  # revient sur la page météo
+
+    # 1) forcer rechargement du persist pour être sûr d'être synchronisé
+    load_persist()
+
+    city_number = int(APP_MODEL["meteo"]["i"]["city_number"])
+    print(f"[update_meteo] city_number={city_number}")
+
+    for idx in range(1, city_number + 1):
+        name = APP_MODEL["meteo"]["s"].get(f"city_name_{idx}", "").strip()
+        print(f"[update_meteo] idx={idx} name='{name}'")
+        if not name:
+            APP_MODEL["meteo"]["s"][f"city_meteo_{idx}"] = ""
+            continue
+
+        try:
+            forecast = get_forecast_for_city(name).replace("&deg;", "")
+            APP_MODEL["meteo"]["s"][f"city_meteo_{idx}"] = forecast
+            print(f"[update_meteo] -> forecast length={len(forecast)}")
+        except Exception as e:
+            print("[update_meteo] Erreur fetch:", e)
+            APP_MODEL["meteo"]["s"][f"city_meteo_{idx}"] = ""
+
+    # 2) sauvegarde et retour à la page
+    save_persist()
+    # 3) envoyer l'ordre de raffraichissement de la météo aux arduinos
+    for name, ar in arduinos.items():
+        ar["actions"].append("refresh_meteo")
+
+    return redirect("/meteo")
 
 
 def meteo_background_task():
@@ -314,7 +350,7 @@ def home():
     if not session.get("logged_in"):
         return redirect(url_for("login"))
     # Tableau des actions possibles
-    arduinos_actions = ["reboot", "bonjour"]
+    arduinos_actions = ["reboot", "bonjour","refresh_meteo"]
     # Liste des applications disponibles d'après APP_MODEL
     app_names = list(APP_MODEL.keys())
     html = """
@@ -910,65 +946,87 @@ def arduino_vars_status():
         }
     return jsonify(output)
 
-
+import re
 def update_app_meteo():
     global APP_MODEL
     from app_meteo import cities, update_city_meteo
-    city_number = APP_MODEL["meteo"]["i"]["city_number"]
+    city_number = int(APP_MODEL["meteo"]["i"]["city_number"])
     for i in range(1, city_number + 1):
         # Mise à jour météo de la ville i
         update_city_meteo(cities[i - 1])
         # Injection résultats dans le APP_MODEL
         APP_MODEL["meteo"]["s"][f"city_name_{i}"]  = cities[i - 1]["name"]
-        APP_MODEL["meteo"]["s"][f"city_meteo_{i}"] = cities[i - 1]["meteo"]
+        tmp_meteo = cities[i - 1]["meteo"]
+        tmp_meteo = re.sub("&deg;", "", tmp_meteo)
+        print(f'update_app_meteo: tmp_meteo={tmp_meteo}')
+        APP_MODEL["meteo"]["s"][f"city_meteo_{i}"] = tmp_meteo
     # --- Sauvegarde persistante ---
     #os.makedirs("/var/data", exist_ok=True)
     os.makedirs("./", exist_ok=True)
-    with open(PERSIST_FILE, "w") as f:
-        json.dump(APP_MODEL["meteo"], f)
+    print(f"Fonction update_app_meteo(): bkp APP_MODEL['meteo']=")
+    pprint(APP_MODEL['meteo'])
+    with open(PERSIST_FILE, "w", encoding="utf-8") as f:
+        json.dump(APP_MODEL, f, ensure_ascii=False, indent=2)
 
 
 @app.route("/meteo")
 def meteo_page():
     import json, os
     global APP_MODEL
+
     if not session.get("logged_in"):
         return redirect(url_for("login"))
-    # --- Recharge les données depuis disque si existantes ---
+
+    # Charger depuis disque
     if os.path.exists(PERSIST_FILE):
-        with open(PERSIST_FILE) as f:
-            APP_MODEL["meteo"] = json.load(f)
-    city_number = APP_MODEL["meteo"]["i"].get("city_number", 0)
-    # --- Construire la liste des villes ---
+        with open(PERSIST_FILE, "r", encoding="utf-8") as f:
+            APP_MODEL = json.load(f)
+    print(f'meteo_page: APP_MODEL=')
+    pprint(APP_MODEL)
+    print(f'var_city_number=')
+    var_city_number=APP_MODEL["meteo"]['i']['city_number']
+    pprint(var_city_number)
+    city_number = int(var_city_number)
+    print(f'city_number={city_number}')
+
+    # Construire liste des villes
     cities = []
     for idx in range(1, city_number + 1):
         name = APP_MODEL["meteo"]["s"].get(f"city_name_{idx}", "")
         meteo = APP_MODEL["meteo"]["s"].get(f"city_meteo_{idx}", "")
         cities.append((idx, name, meteo))
+
     # Icônes météo
     icons = {
         "SOLEIL": "☀️",
         "NUAGEUX": "☁️",
-        "BROUILLARD": "🌫️",
+        "BRUME": "🌫️",
         "PLUIE": "☔",
         "NEIGE": "⛄"
     }
-    # --- Extraire les horaires disponibles ---
-    def extract_hours(meteo_string):
-        parts = meteo_string.split()
-        hours = []
-        for p in parts:
-            if p.endswith("h:") or p.endswith("h:0°") or "h:" in p:
-                h = p.split(":")[0]
-                hours.append(h)
-        return hours
-    # On prend l'entête de la 1ère ville
+    icons = {
+        "SOLEIL": "☀️",
+        "NUAGEUX": "☁️",
+        "BRUME": "≋",
+        "PLUIE": "☔",
+        "NEIGE": "⛄"
+    }
+
+    # Horaire nuit → lune
+    def icon_for(hour, weather):
+        if weather == "SOLEIL":
+            h = int(hour.replace("h", ""))
+            if h >= 17 or h < 7:
+                return "🌙"
+        return icons.get(weather, "❓")
+
+    # Extraire entêtes horaires (à partir de la 1ère ville)
     hour_labels = []
     if cities and cities[0][2]:
-        raw = cities[0][2]
-        segments = raw.split("  ")
+        segments = cities[0][2].split("  ")
         hour_labels = [seg.split(":")[0] for seg in segments]
-    # HTML //////////////////////////////////////////////////////////////////////
+
+    # HTML ////////////////////////////////////////////////////////
     html = """
     <html>
         <head>
@@ -998,13 +1056,10 @@ def meteo_page():
                 td {
                     border: 2px solid #1f618d;
                     padding: 10px;
-                    font-size: 15px;
                     text-align: center;
                     vertical-align: middle;
                 }
-                tr:nth-child(even) {
-                    background-color: #f2faff;
-                }
+                tr:nth-child(even) { background-color: #f2faff; }
                 .btn {
                     display: inline-block;
                     padding: 10px 16px;
@@ -1015,6 +1070,18 @@ def meteo_page():
                     margin-top: 20px;
                 }
                 .btn:hover { background-color: #1f618d; }
+                .formbox {
+                    margin-top: 30px;
+                    padding: 20px;
+                    background: white;
+                    border: 2px solid #1f618d;
+                    border-radius: 10px;
+                }
+                input[type=text] {
+                    padding: 8px;
+                    width: 300px;
+                    font-size: 16px;
+                }
             </style>
         </head>
         <body>
@@ -1023,44 +1090,211 @@ def meteo_page():
 
         <table>
             <tr>
-                <th style="width: 50px;">#</th>
-                <th style="width: 150px;">Ville</th>
+                <th>#</th>
+                <th>Ville</th>
     """
-    # Ajouter les entêtes horaires
+
+    # Ajouter entêtes horaires
     for h in hour_labels:
         html += f"<th>{h}</th>"
     html += "</tr>"
-    # Ajouter lignes météo
+
+    # Lignes météo
     for idx, name, meteo in cities:
-        # Séparation brute : "12h:3° SOLEIL"
         entries = [seg.strip() for seg in meteo.split("  ") if seg.strip()]
-        # Extraire (température, icône)
-        meteo_cells = []
+        html += f"<tr><td>{idx}</td><td>{name}</td>"
+
         for entry in entries:
             try:
                 hour, rest = entry.split(":", 1)
-                temp, weather_type = rest.split(" ", 1)
-                weather_type = weather_type.strip()
+                temp, wtype = rest.split(" ", 1)
+                wtype = wtype.strip()
+                ic = icon_for(hour, wtype)
             except:
                 temp = "?"
-                weather_type = ""
-            icon = icons.get(weather_type, "❓")
-            meteo_cells.append(f"{temp}<br>{icon}")
-        # Construire la ligne
-        html += f"<tr><td>{idx}</td><td>{name}</td>"
-        for cell in meteo_cells:
-            html += f"<td>{cell}</td>"
+                ic = "❓"
+            html += f"<td>{temp}<br>{ic}</td>"
+
         html += "</tr>"
+
+    html += "</table>"
+
+    # Bouton refresh
     html += """
-        </table>
-        <form action="/update_meteo" method="get">
-            <button type="submit" class="btn">🔄 Rafraîchir la météo</button>
-        </form>
-        <a href="/home" class="btn">Retour</a>
-        </body>
-    </html>
+    <form action="/update_meteo" method="get">
+        <button type="submit" class="btn">🔄 Rafraîchir la météo</button>
+    </form>
     """
+
+    # Ajout d’une ville
+    html += """
+    <div class="formbox">
+        <h3>➕ Ajouter une ville</h3>
+        <form action="/add_city" method="post">
+            <input type="text" name="city_name" placeholder="Nom de la ville" required>
+            <br><br>
+            <button class="btn" type="submit">Ajouter</button>
+        </form>
+    </div>
+    """
+
+    # Supprimer dernière ville
+    html += """
+    <form action="/remove_last_city" method="post">
+        <button type="submit" class="btn" style="background:#c0392b">🗑️ Supprimer dernière ville</button>
+    </form>
+    """
+
+    html += '<a href="/home" class="btn">Retour</a>'
+
+    html += "</body></html>"
+
     return html
+
+@app.route("/add_city", methods=["POST"])
+def add_city():
+    global APP_MODEL
+
+    name = request.form.get("city_name", "").strip()
+
+    if not name:
+        return redirect("/meteo")
+
+    # Incrémenter l'index
+    idx = int(APP_MODEL["meteo"]["i"]["city_number"]) + 1
+    APP_MODEL["meteo"]["i"]["city_number"] = f'{idx}'
+
+    # Enregistrer la nouvelle ville
+    APP_MODEL["meteo"]["s"][f"city_name_{idx}"] = name
+    APP_MODEL["meteo"]["s"][f"city_meteo_{idx}"] = ""
+    save_persist()  # si tu as une fonction pour sauvegarder
+    return redirect("/update_meteo")   # pour récupérer les données météo
+
+@app.route("/remove_last_city", methods=["POST"])
+def remove_last_city():
+    global APP_MODEL
+    count = int(APP_MODEL["meteo"]["i"]["city_number"])
+
+    if count > 0:
+        APP_MODEL["meteo"]["s"].pop(f"city_name_{count}", None)
+        APP_MODEL["meteo"]["s"].pop(f"city_meteo_{count}", None)
+        count_1= count - 1
+        APP_MODEL["meteo"]["i"]["city_number"] = f'{count_1}'
+    save_persist()
+    return redirect("/meteo")
+
+def save_persist():
+    """Écrit APP_MODEL['meteo'] dans le fichier de persistance."""
+    global APP_MODEL, PERSIST_FILE
+    print(f'Fonction save_persist() : bkp APP_MODEL=')
+    pprint(APP_MODEL)
+    with open(PERSIST_FILE, "w", encoding="utf-8") as f:
+        json.dump(APP_MODEL, f, ensure_ascii=False, indent=2)
+
+def load_persist():
+    """Recharge APP_MODEL['meteo'] depuis le fichier si présent."""
+    global APP_MODEL, PERSIST_FILE
+    if os.path.exists(PERSIST_FILE):
+        with open(PERSIST_FILE, "r", encoding="utf-8") as f:
+            APP_MODEL = json.load(f)
+    else:
+        # rien à charger
+        pass
+
+# --- utilitaires pour géocodage + météo (simple, synchronisé) ---
+def geocode_city(name):
+    url = f"https://geocoding-api.open-meteo.com/v1/search?name={requests.utils.quote(name)}&count=1&language=fr"
+    r = requests.get(url, timeout=6)
+    if r.status_code != 200:
+        return None
+    data = r.json()
+    if "results" not in data or not data["results"]:
+        return None
+    return data["results"][0]["latitude"], data["results"][0]["longitude"]
+
+def decode_weather(code):
+    if code == 0: return "SOLEIL"
+    if code in (1,2,3): return "NUAGEUX"
+    if code in (45,48): return "BRUME"
+    if (51 <= code <= 67) or (80 <= code <= 82) or (95 <= code <= 99): return "PLUIE"
+    if (71 <= code <= 77) or (85 <= code <= 86): return "NEIGE"
+    return "INCONNU"
+
+def get_forecast_for_city(name):
+    """
+    Renvoie la chaîne formatée attendue pour city_meteo_X,
+    exemple: "08h:12° SOLEIL 10h:14° NUAGEUX ..." (12 créneaux).
+    """
+    # 1) géocodage
+    geo = geocode_city(name)
+    if not geo:
+        return ""  # ou "GEO_ERR"
+    lat, lon = geo
+
+    # 2) appel open-meteo (compression=none & format=json)
+    url = (
+        "https://api.open-meteo.com/v1/forecast?"
+        f"latitude={lat}&longitude={lon}"
+        "&hourly=temperature_2m,weather_code"
+        "&timezone=Europe%2FParis"
+        "&compression=none&format=json"
+    )
+    r = requests.get(url, timeout=8)
+    if r.status_code != 200:
+        return ""
+
+    data = r.json()
+    times = data["hourly"]["time"]
+    temps = data["hourly"]["temperature_2m"]
+    codes = data["hourly"]["weather_code"]
+
+    schedule_hours = [8,10,12,14,16,18,20,22,0,2,4,6]
+
+    now_h = datetime.now().hour
+    # trouver premier index dans schedule >= now_h, sinon prendre le premier après min
+    start_idx = 0
+    for i, h in enumerate(schedule_hours):
+        if h >= now_h:
+            start_idx = i
+            break
+
+    parts = []
+    for k in range(12):
+        target_h = schedule_hours[(start_idx + k) % 12]
+        # trouver un index j dans times avec heure == target_h (prend le premier)
+        j = next((i for i,t in enumerate(times) if int(t[11:13]) == target_h), None)
+        if j is None:
+            continue
+        tval = int(round(temps[j]))
+        wcode = int(codes[j])
+        wtext = decode_weather(wcode)
+        parts.append(f"{target_h:02d}h:{tval}&deg; {wtext}")
+
+    return "  ".join(parts)
+
+
+
+@app.route("/delete_city", methods=["POST"])
+def delete_city():
+    global APP_MODEL
+
+    city_number = int(APP_MODEL["meteo"]["i"]["city_number"])
+
+    if city_number > 0:
+        # Suppression des champs
+        del APP_MODEL["meteo"]["s"][f"city_name_{city_number}"]
+        del APP_MODEL["meteo"]["s"][f"city_meteo_{city_number}"]
+
+        # Décrémentation
+        city_number_1 = city_number - 1
+        APP_MODEL["meteo"]["i"]["city_number"] = f'{city_number}'
+
+        # Sauvegarde
+        save_persist()
+
+    return redirect("/meteo")
+
+
 
 @app.route("/arduino_get_app_vars_names")
 def arduino_get_app_vars_names():
